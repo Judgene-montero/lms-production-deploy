@@ -1,0 +1,254 @@
+# users_app/serializers.py
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password
+from django.contrib.auth.password_validation import validate_password
+from .models import ApprovedSchoolID, SiteSettings, AdminLog
+from dashboards_app.serializers import SidebarLinkSerializer, CourseSerializer, SubmissionSerializer, NotificationSerializer
+
+
+User = get_user_model()
+
+
+# --------------------------
+# REGISTER SERIALIZER
+# --------------------------
+class RegisterSerializer(serializers.ModelSerializer):
+    initial_password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    password2 = serializers.CharField(write_only=True, required=True)
+
+    class Meta:
+        model = User
+        fields = (
+            'username', 'initial_password', 'password', 'password2',
+            'email', 'first_name', 'middle_initial', 'last_name', 'school_id'
+        )
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Passwords do not match."})
+
+        # Validate approved school ID
+        try:
+            approved = ApprovedSchoolID.objects.get(school_id=attrs['school_id'])
+        except ApprovedSchoolID.DoesNotExist:
+            raise serializers.ValidationError({"school_id": "School ID not approved."})
+
+        if not check_password(attrs['initial_password'], approved.initial_password):
+            raise serializers.ValidationError({"initial_password": "Initial password is incorrect."})
+
+        if approved.first_name.lower() != attrs['first_name'].lower() or approved.last_name.lower() != attrs['last_name'].lower():
+            raise serializers.ValidationError({"name": "Full name does not match school record."})
+
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('password2')
+        validated_data.pop('initial_password')
+
+        approved = ApprovedSchoolID.objects.get(school_id=validated_data['school_id'])
+        validated_data['role'] = approved.role
+        validated_data['college'] = approved.college
+
+        user = User.objects.create_user(**validated_data)
+        user.is_verified_school_user = True
+        user.save()
+        return user
+
+
+# --------------------------
+# USER SERIALIZER
+# --------------------------
+class UserSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'username', 'email', 'first_name', 'middle_initial', 'last_name',
+            'full_name', 'role', 'college', 'school_id', 'is_verified_school_user',
+        )
+
+    def get_full_name(self, obj):
+        mi = f"{obj.middle_initial}." if obj.middle_initial else ""
+        return f"{obj.last_name}, {obj.first_name} {mi}".strip()
+
+
+# --------------------------
+# APPROVED SCHOOL ID SERIALIZER
+# --------------------------
+class ApprovedSchoolIDSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApprovedSchoolID
+        fields = ('id', 'first_name', 'middle_initial', 'last_name', 'school_id', 'role', 'college')
+
+
+class SiteSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SiteSettings
+        fields = (
+            "require_email_verification",
+            "allow_instructor_self_registration",
+            "allow_username_change",
+            "default_user_role",
+            "analytics_polling_interval",
+            "max_login_attempts",
+            "updated_at",
+        )
+        read_only_fields = ("updated_at",)
+
+
+class AdminLogSerializer(serializers.ModelSerializer):
+    performed_by_username = serializers.CharField(source="performed_by.username", read_only=True)
+    target_user_username = serializers.CharField(source="target_user.username", read_only=True)
+
+    class Meta:
+        model = AdminLog
+        fields = (
+            "id",
+            "action",
+            "performed_by",
+            "performed_by_username",
+            "target_user",
+            "target_user_username",
+            "description",
+            "timestamp",
+        )
+        read_only_fields = ("id", "timestamp", "performed_by", "performed_by_username")
+
+
+class InstructorProfileSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "middle_initial",
+            "full_name",
+            "name",
+            "bio",
+            "phone",
+            "department",
+            "avatar",
+            "avatar_url",
+        )
+        read_only_fields = ("id", "username", "full_name", "name", "avatar_url")
+
+    def get_full_name(self, obj):
+        mi = f"{obj.middle_initial}." if obj.middle_initial else ""
+        composed = f"{obj.first_name} {mi} {obj.last_name}".replace("  ", " ").strip()
+        return composed or obj.username
+
+    def get_name(self, obj):
+        return self.get_full_name(obj)
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.avatar.url)
+        return obj.avatar.url
+
+
+class InstructorNotificationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = (
+            "notify_assignment_submission",
+            "notify_quiz_completed",
+            "notify_student_join_course",
+        )
+
+
+class StudentProfileSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+    can_edit_school_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "username",
+            "role",
+            "email",
+            "first_name",
+            "last_name",
+            "middle_initial",
+            "full_name",
+            "name",
+            "school_id",
+            "college",
+            "profile_complete",
+            "can_edit_school_id",
+            "bio",
+            "phone",
+            "department",
+            "avatar",
+            "avatar_url",
+        )
+        read_only_fields = (
+            "id",
+            "username",
+            "role",
+            "full_name",
+            "name",
+            "school_id",
+            "college",
+            "profile_complete",
+            "can_edit_school_id",
+            "avatar_url",
+        )
+
+    def get_full_name(self, obj):
+        mi = f"{obj.middle_initial}." if obj.middle_initial else ""
+        composed = f"{obj.first_name} {mi} {obj.last_name}".replace("  ", " ").strip()
+        return composed or obj.username
+
+    def get_name(self, obj):
+        return self.get_full_name(obj)
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.avatar.url)
+        return obj.avatar.url
+
+    def get_can_edit_school_id(self, obj):
+        return not bool(getattr(obj, "school_id", ""))
+
+
+class StudentNotificationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = (
+            "notify_instructor_announcement",
+            "notify_assignment_graded",
+            "notify_quiz_released",
+            "notify_due_date_approaching",
+        )
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, validators=[validate_password])
+
+
+class StudentNotificationReadSerializer(serializers.Serializer):
+    notification_keys = serializers.ListField(
+        child=serializers.CharField(max_length=255),
+        allow_empty=True,
+        required=True,
+    )

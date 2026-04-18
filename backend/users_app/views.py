@@ -1,0 +1,926 @@
+# users_app/views.py
+import pandas as pd
+import logging
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
+from django.core import signing
+from django.core.mail import send_mail
+from django.conf import settings
+from django.db.models import Q
+from .models import ApprovedSchoolID, Course, SiteSettings, AdminLog
+from .models import StudentNotificationRead
+from .serializers import (
+    ApprovedSchoolIDSerializer as ApprovedIDSerializer,
+    SiteSettingsSerializer,
+    AdminLogSerializer,
+    InstructorProfileSerializer,
+    InstructorNotificationSettingsSerializer,
+    StudentProfileSerializer,
+    StudentNotificationSettingsSerializer,
+    StudentNotificationReadSerializer,
+    ChangePasswordSerializer,
+)
+from rest_framework.permissions import IsAuthenticated
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
+
+
+def create_admin_log(action, performed_by=None, target_user=None, description=""):
+    try:
+        AdminLog.objects.create(
+            action=action,
+            performed_by=performed_by if getattr(performed_by, "is_authenticated", False) else None,
+            target_user=target_user,
+            description=description or "",
+        )
+    except Exception as e:
+        # Skip logging if table does not exist
+        logger.warning(
+            "Admin log skipped due to storage error.",
+            extra={
+                "action": action,
+                "performed_by_id": getattr(performed_by, "id", None),
+                "target_user_id": getattr(target_user, "id", None),
+            },
+            exc_info=True,
+        )
+
+# --------------------------
+# USER PROFILE VIEW
+# --------------------------
+class UserProfileView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # Determine user role safely
+        if user.is_superuser:
+            role = "admin"
+        else:
+            role = getattr(user, "role", "student")  # default to "student" if not set
+
+        return Response({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": getattr(user, "first_name", ""),
+            "middle_initial": getattr(user, "middle_initial", ""),
+            "last_name": getattr(user, "last_name", ""),
+            "role": role,  # now supports "student", "instructor", or "admin"
+            "school_id": getattr(user, "school_id", ""),
+            "college": getattr(user, "college", ""),
+            "is_verified_school_user": getattr(user, "is_verified_school_user", False),
+            "is_email_verified": getattr(user, "is_email_verified", False),
+            "profile_complete": getattr(user, "profile_complete", False),
+            "is_active": user.is_active,
+            "bio": getattr(user, "bio", ""),
+            "phone": getattr(user, "phone", ""),
+            "department": getattr(user, "department", ""),
+            "avatar": request.build_absolute_uri(user.avatar.url) if getattr(user, "avatar", None) else None,
+            "notify_assignment_submission": getattr(user, "notify_assignment_submission", True),
+            "notify_quiz_completed": getattr(user, "notify_quiz_completed", True),
+            "notify_student_join_course": getattr(user, "notify_student_join_course", True),
+        })
+
+    def patch(self, request):
+        user = request.user
+        data = request.data or {}
+
+        if "first_name" in data:
+            user.first_name = str(data.get("first_name", "")).strip()
+        if "last_name" in data:
+            user.last_name = str(data.get("last_name", "")).strip()
+        if "middle_initial" in data:
+            mi = str(data.get("middle_initial", "")).strip().upper()
+            user.middle_initial = mi[:1] if mi else ""
+        if "college" in data:
+            user.college = str(data.get("college", "")).strip() or None
+        if "student_id" in data:
+            user.school_id = str(data.get("student_id", "")).strip() or None
+        if "school_id" in data:
+            user.school_id = str(data.get("school_id", "")).strip() or None
+
+        required_for_all = [user.first_name, user.last_name, user.email, user.middle_initial, user.college]
+        student_ok = bool(user.school_id) if user.role == "student" else True
+        user.profile_complete = all(bool(v) for v in required_for_all) and student_ok
+        user.save()
+
+        return Response(
+            {
+                "message": "Profile updated successfully.",
+                "profile_complete": user.profile_complete,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+def _ensure_instructor(user):
+    return getattr(user, "role", "") == "instructor"
+
+
+def _ensure_student(user):
+    return getattr(user, "role", "") == "student"
+
+
+class InstructorProfileAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request):
+        if not _ensure_instructor(request.user):
+            return Response({"error": "Only instructors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = InstructorProfileSerializer(request.user, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        if not _ensure_instructor(request.user):
+            return Response({"error": "Only instructors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user
+        data = request.data or {}
+        name = str(data.get("name", "")).strip()
+
+        if name:
+            parts = [part for part in name.split(" ") if part]
+            if len(parts) == 1:
+                user.first_name = parts[0]
+            else:
+                user.first_name = parts[0]
+                user.last_name = " ".join(parts[1:])
+
+        if "email" in data:
+            user.email = str(data.get("email", "")).strip()
+        if "bio" in data:
+            user.bio = str(data.get("bio", "")).strip()
+        if "phone" in data:
+            user.phone = str(data.get("phone", "")).strip()
+        if "department" in data:
+            user.department = str(data.get("department", "")).strip()
+
+        user.save()
+        serializer = InstructorProfileSerializer(user, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class InstructorProfileAvatarUploadAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        if not _ensure_instructor(request.user):
+            return Response({"error": "Only instructors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+        avatar = request.FILES.get("avatar") or request.FILES.get("profile_picture")
+        if not avatar:
+            return Response({"error": "avatar file is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        user.avatar = avatar
+        user.save(update_fields=["avatar"])
+        serializer = InstructorProfileSerializer(user, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class InstructorNotificationSettingsAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not _ensure_instructor(request.user):
+            return Response({"error": "Only instructors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = InstructorNotificationSettingsSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        if not _ensure_instructor(request.user):
+            return Response({"error": "Only instructors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = InstructorNotificationSettingsSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class StudentProfileAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request):
+        if not _ensure_student(request.user):
+            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = StudentProfileSerializer(request.user, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        if not _ensure_student(request.user):
+            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user
+        data = request.data or {}
+        name = str(data.get("name", "")).strip()
+
+        if name:
+            parts = [part for part in name.split(" ") if part]
+            if len(parts) == 1:
+                user.first_name = parts[0]
+            else:
+                user.first_name = parts[0]
+                user.last_name = " ".join(parts[1:])
+
+        if "first_name" in data:
+            user.first_name = str(data.get("first_name", "")).strip()
+        if "last_name" in data:
+            user.last_name = str(data.get("last_name", "")).strip()
+        if "middle_initial" in data:
+            mi = str(data.get("middle_initial", "")).strip().upper()
+            user.middle_initial = mi[:1] if mi else ""
+
+        if "email" in data:
+            email = str(data.get("email", "")).strip().lower()
+            if not email:
+                return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+            duplicate_email = User.objects.filter(email__iexact=email).exclude(id=user.id).exists()
+            if duplicate_email:
+                return Response({"error": "Email is already in use."}, status=status.HTTP_400_BAD_REQUEST)
+            user.email = email
+        if "bio" in data:
+            user.bio = str(data.get("bio", "")).strip()
+        if "phone" in data:
+            phone = str(data.get("phone", "")).strip()
+            allowed_chars = set("0123456789+-() ")
+            if any(ch not in allowed_chars for ch in phone):
+                return Response({"error": "Phone number contains invalid characters."}, status=status.HTTP_400_BAD_REQUEST)
+            if len(phone) > 20:
+                return Response({"error": "Phone number must be 20 characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
+            user.phone = phone
+        if "department" in data:
+            user.department = str(data.get("department", "")).strip()
+
+        if "school_id" in data:
+            incoming_school_id = str(data.get("school_id", "")).strip()
+            if not incoming_school_id:
+                return Response({"error": "Student ID cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if user.school_id and incoming_school_id != user.school_id:
+                return Response(
+                    {"error": "Student ID is already locked. Contact admin to request a change."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            duplicate_school_id = User.objects.filter(school_id__iexact=incoming_school_id).exclude(id=user.id).exists()
+            if duplicate_school_id:
+                return Response({"error": "Student ID is already taken."}, status=status.HTTP_400_BAD_REQUEST)
+            user.school_id = incoming_school_id
+
+        if not user.first_name or not user.last_name:
+            return Response({"error": "First name and last name are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        required_for_all = [user.first_name, user.last_name, user.email, user.middle_initial, user.college]
+        user.profile_complete = all(bool(value) for value in required_for_all) and bool(user.school_id)
+        user.save()
+        serializer = StudentProfileSerializer(user, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class StudentProfileAvatarUploadAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        if not _ensure_student(request.user):
+            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+        avatar = request.FILES.get("avatar") or request.FILES.get("profile_picture")
+        if not avatar:
+            return Response({"error": "avatar file is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        user.avatar = avatar
+        user.save(update_fields=["avatar"])
+        serializer = StudentProfileSerializer(user, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class StudentNotificationSettingsAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not _ensure_student(request.user):
+            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = StudentNotificationSettingsSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        if not _ensure_student(request.user):
+            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = StudentNotificationSettingsSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class StudentNotificationReadAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not _ensure_student(request.user):
+            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+        keys = list(
+            StudentNotificationRead.objects.filter(student=request.user).values_list("notification_key", flat=True)
+        )
+        return Response({"notification_keys": keys}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        if not _ensure_student(request.user):
+            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = StudentNotificationReadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        keys = list(dict.fromkeys(serializer.validated_data["notification_keys"]))
+
+        existing_keys = set(
+            StudentNotificationRead.objects.filter(student=request.user, notification_key__in=keys).values_list("notification_key", flat=True)
+        )
+        new_rows = [
+            StudentNotificationRead(student=request.user, notification_key=key)
+            for key in keys
+            if key and key not in existing_keys
+        ]
+        if new_rows:
+            StudentNotificationRead.objects.bulk_create(new_rows)
+
+        all_keys = list(
+            StudentNotificationRead.objects.filter(student=request.user).values_list("notification_key", flat=True)
+        )
+        return Response({"notification_keys": all_keys}, status=status.HTTP_200_OK)
+
+
+class ChangePasswordAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        current_password = serializer.validated_data["current_password"]
+        new_password = serializer.validated_data["new_password"]
+        if not user.check_password(current_password):
+            return Response({"error": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+# --------------------------
+# CHECK APPROVED ID (GET)
+# --------------------------
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def check_approved_id(request, school_id):
+    """
+    Returns: { exists: bool, first_name, middle_initial, last_name, role, college }
+    """
+    try:
+        record = ApprovedSchoolID.objects.get(school_id=school_id)
+        return Response({
+            "exists": True,
+            "first_name": record.first_name,
+            "middle_initial": record.middle_initial,
+            "last_name": record.last_name,
+            "role": record.role,
+            "college": record.college,
+        })
+    except ApprovedSchoolID.DoesNotExist:
+        return Response({"exists": False})
+
+
+# --------------------------
+# REGISTER / ACTIVATE USER (POST)
+# --------------------------
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_user(request):
+    data = request.data
+    username = str(data.get("username", "")).strip()
+    first_name = str(data.get("first_name", "")).strip()
+    last_name = str(data.get("last_name", "")).strip()
+    email = str(data.get("email", "")).strip().lower()
+    password = data.get("password")
+    confirm_password = data.get("confirm_password")
+    role = str(data.get("role", "student")).strip().lower()
+
+    if role not in ["student", "instructor"]:
+        role = "student"
+
+    if not first_name:
+        return Response({"error": "First name is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not last_name:
+        return Response({"error": "Last name is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not username:
+        return Response({"error": "Username is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not email:
+        return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not password or len(str(password)) < 8:
+        return Response({"error": "Password must be at least 8 characters."}, status=status.HTTP_400_BAD_REQUEST)
+    if password != confirm_password:
+        return Response({"error": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(username__iexact=username).exists():
+        return Response({"error": "Username already taken"}, status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(email__iexact=email).exists():
+        return Response({"error": "Email already registered"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # NOTE: Student auto-activation is only for local testing.
+    # Remove or modify before deploying to production.
+    is_student = role == "student"
+    is_debug = bool(getattr(settings, "DEBUG", False))
+
+    if is_student:
+        is_active = True
+        is_email_verified = True
+    else:
+        if is_debug:
+            # Local testing: allow instructor login even without email
+            is_active = True
+            is_email_verified = True
+        else:
+            # Production: require email verification + admin approval
+            is_active = False
+            is_email_verified = False
+
+    user = User.objects.create(
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        role=role,
+        is_active=is_active,
+        is_email_verified=is_email_verified,
+        profile_complete=False,
+        password=make_password(password),
+    )
+
+    response = {"role": role}
+    if is_student:
+        response["message"] = "Registration successful. Student account activated for local testing."
+    else:
+        token = signing.dumps({"uid": user.id})
+        verify_url = f"http://localhost:8000/api/users/verify-email/{token}/"
+
+        # Production flow: require email verification first.
+        if not is_debug:
+            try:
+                send_mail(
+                    subject="Verify your LMS instructor account",
+                    message=f"Welcome to LMS. Verify your instructor account: {verify_url}",
+                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@lms.local"),
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
+            except Exception:
+                # SMTP may be unavailable in local testing/staging.
+                pass
+
+            # New placement: no email sending in DEBUG mode, but still provide verification URL in response for testing.
+            if email:
+                try:
+                    send_mail(
+                        subject="Verify your LMS instructor account",
+                        message=f"Welcome to LMS. Verify your instructor account: {verify_url}",
+                        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@lms.local"),
+                        recipient_list=[email],
+                        fail_silently=False,
+                    )
+                except Exception:
+                    pass
+
+            logger.info(
+                "Instructor verification link generated for local visibility.",
+                extra={"user_id": user.id, "username": user.username},
+            )
+            response["message"] = "Registration successful. Please verify your email, then wait for admin approval."
+        else:
+            response["message"] = (
+                "Registration successful. Instructor email verification is bypassed in local DEBUG mode; "
+                "account is awaiting admin approval."
+            )
+            response["verification_token"] = token
+            response["verification_url"] = verify_url
+
+    return Response(response, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def verify_email(request, token):
+    try:
+        payload = signing.loads(token, max_age=60 * 60 * 24 * 3)
+        user = User.objects.get(id=payload.get("uid"))
+    except Exception:
+        return Response({"error": "Invalid or expired verification token."}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.is_email_verified = True
+    if user.role == "student":
+        user.is_active = True
+    else:
+        user.is_active = False
+    user.save(update_fields=["is_email_verified", "is_active"])
+
+    if user.role == "instructor":
+        msg = "Email verified. Your instructor account is awaiting admin approval."
+    else:
+        msg = "Email verified. Your account is now active."
+
+    return Response({"message": msg}, status=status.HTTP_200_OK)
+
+
+# --------------------------
+# ADMIN - INSTRUCTOR APPROVAL
+# --------------------------
+class PendingInstructorApprovalsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        pending = User.objects.filter(
+            role="instructor",
+            is_email_verified=True,
+            is_active=False
+        ).order_by("-date_joined")
+
+        rows = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": u.email,
+                "date_joined": u.date_joined,
+            }
+            for u in pending
+        ]
+        return Response(rows, status=status.HTTP_200_OK)
+
+
+class ApproveInstructorView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id, role="instructor")
+        except User.DoesNotExist:
+            return Response({"error": "Instructor not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not user.is_email_verified:
+            return Response(
+                {"error": "Instructor must verify email before admin approval."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # New line to bypass if email is empty:
+        if user.email and not user.is_email_verified:
+            return Response(
+                {"error": "Instructor must verify email before admin approval."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        create_admin_log(
+            action="Instructor approved",
+            performed_by=request.user,
+            target_user=user,
+            description=f"Approved instructor account for {user.username}.",
+        )
+        return Response({"message": "Instructor account approved."}, status=status.HTTP_200_OK)
+
+
+class AdminUserListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        queryset = User.objects.all().order_by("-date_joined")
+
+        role = (request.query_params.get("role") or "").strip().lower()
+        search = (request.query_params.get("search") or "").strip().lower()
+        if role in {"student", "instructor", "admin"}:
+            queryset = queryset.filter(role=role)
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search)
+                | Q(email__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+            )
+
+        rows = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "email": u.email,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "role": u.role,
+                "school_id": u.school_id,
+                "is_email_verified": bool(getattr(u, "is_email_verified", False)),
+                "is_active": u.is_active,
+                "date_joined": u.date_joined,
+            }
+            for u in queryset
+        ]
+        return Response(rows, status=status.HTTP_200_OK)
+
+
+class AdminUserDetailView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_user(self, user_id):
+        return User.objects.filter(id=user_id).first()
+
+    def get(self, request, user_id):
+        user = self.get_user(user_id)
+        if not user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "middle_initial": user.middle_initial,
+                "role": user.role,
+                "school_id": user.school_id,
+                "college": user.college,
+                "is_email_verified": bool(getattr(user, "is_email_verified", False)),
+                "is_active": user.is_active,
+                "date_joined": user.date_joined,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def patch(self, request, user_id):
+        user = self.get_user(user_id)
+        if not user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        action_notes = []
+        data = request.data or {}
+        if "is_active" in data:
+            user.is_active = bool(data.get("is_active"))
+            action_notes.append("active status updated")
+        if "status" in data:
+            user.is_active = str(data.get("status")).lower() == "active"
+            action_notes.append("status updated")
+        if "college" in data:
+            user.college = str(data.get("college", "")).strip() or None
+            action_notes.append("college updated")
+        if "role" in data:
+            next_role = str(data.get("role", "")).strip().lower()
+            if next_role in {"student", "instructor"}:
+                user.role = next_role
+                action_notes.append("role updated")
+        user.save()
+        if action_notes:
+            create_admin_log(
+                action="User updated",
+                performed_by=request.user,
+                target_user=user,
+                description=f"{user.username}: {', '.join(action_notes)}.",
+            )
+        return Response({"message": "User updated successfully."}, status=status.HTTP_200_OK)
+
+    def put(self, request, user_id):
+        return self.patch(request, user_id)
+
+    def delete(self, request, user_id):
+        user = self.get_user(user_id)
+        if not user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        if user.id == request.user.id:
+            return Response({"error": "You cannot delete your own admin account."}, status=status.HTTP_400_BAD_REQUEST)
+        username = user.username
+        user.delete()
+        create_admin_log(
+            action="User deleted",
+            performed_by=request.user,
+            target_user=None,
+            description=f"Deleted user account {username}.",
+        )
+        return Response({"message": "User deleted."}, status=status.HTTP_200_OK)
+
+
+class AdminBulkStatusView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def put(self, request):
+        user_ids = request.data.get("user_ids") or []
+        status_value = str(request.data.get("status", "")).strip().lower()
+        if status_value not in {"active", "inactive"}:
+            return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated = User.objects.filter(id__in=user_ids).exclude(id=request.user.id).update(
+            is_active=(status_value == "active")
+        )
+        create_admin_log(
+            action=f"Users set {status_value}",
+            performed_by=request.user,
+            target_user=None,
+            description=f"Bulk updated {updated} user(s) to {status_value}.",
+        )
+        return Response({"updated": updated, "status": status_value}, status=status.HTTP_200_OK)
+
+
+class AdminSettingsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_object(self):
+        obj, _ = SiteSettings.objects.get_or_create(id=1)
+        return obj
+
+    def get(self, request):
+        serializer = SiteSettingsSerializer(self.get_object())
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request):
+        settings_obj = self.get_object()
+        serializer = SiteSettingsSerializer(settings_obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        create_admin_log(
+            action="Settings updated",
+            performed_by=request.user,
+            target_user=None,
+            description="Updated admin site settings.",
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class AdminLogsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        queryset = AdminLog.objects.select_related("performed_by", "target_user").all()
+        action = (request.query_params.get("action") or "").strip()
+        search = (request.query_params.get("search") or "").strip()
+        ordering = (request.query_params.get("ordering") or "-timestamp").strip()
+
+        if action:
+            queryset = queryset.filter(action__icontains=action)
+        if search:
+            queryset = queryset.filter(
+                Q(description__icontains=search)
+                | Q(action__icontains=search)
+                | Q(performed_by__username__icontains=search)
+                | Q(target_user__username__icontains=search)
+            )
+        if ordering not in {"timestamp", "-timestamp"}:
+            ordering = "-timestamp"
+        queryset = queryset.order_by(ordering)[:500]
+
+        serializer = AdminLogSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        action = str(request.data.get("action", "")).strip()
+        description = str(request.data.get("description", "")).strip()
+        target_user_id = request.data.get("target_user")
+        target_user = User.objects.filter(id=target_user_id).first() if target_user_id else None
+
+        if not action:
+            return Response({"error": "action is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        log = AdminLog.objects.create(
+            action=action,
+            performed_by=request.user,
+            target_user=target_user,
+            description=description,
+        )
+        serializer = AdminLogSerializer(log)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+# --------------------------
+# LIST APPROVED IDs (admin)
+# --------------------------
+class ApprovedIDListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        queryset = ApprovedSchoolID.objects.all().order_by("-id")
+        serializer = ApprovedIDSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+# --------------------------
+# DELETE APPROVED ID (admin)
+# --------------------------
+class DeleteApprovedIDView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+
+    def delete(self, request, pk):
+        try:
+            record = ApprovedSchoolID.objects.get(pk=pk)
+            record.delete()
+            return Response({"message": "Deleted successfully"}, status=status.HTTP_200_OK)
+        except ApprovedSchoolID.DoesNotExist:
+            return Response({"error": "Record not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+# --------------------------
+# UPLOAD APPROVED IDs (admin) - supports initial_password column
+# --------------------------
+class UploadApprovedIDsView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+    DEFAULT_COLLEGE = "CAS"
+
+    def post(self, request):
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"error": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not (file.name.endswith(".csv") or file.name.endswith(".xlsx")):
+            return Response({"error": "File must be .csv or .xlsx"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            df = pd.read_excel(file) if file.name.endswith(".xlsx") else pd.read_csv(file)
+            required_columns = {"first_name", "last_name", "school_id", "role", "initial_password"}
+            if not required_columns.issubset(df.columns):
+                return Response({
+                    "error": "Missing required columns in file.",
+                    "required": list(required_columns),
+                    "provided": list(df.columns)
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            created = 0
+            existing = 0
+            valid_colleges = [c[0] for c in ApprovedSchoolID.COLLEGE_CHOICES]
+
+            for _, row in df.iterrows():
+                first_name = str(row.get("first_name", "")).strip() or ""
+                middle_initial = str(row.get("middle_initial", "")).strip() or None
+                last_name = str(row.get("last_name", "")).strip() or ""
+                school_id = str(row["school_id"]).strip()
+                role = str(row["role"]).strip().lower()
+                college = str(row.get("college", "")).strip() or self.DEFAULT_COLLEGE
+                initial_password = str(row.get("initial_password", "Temp1234")).strip()
+
+                if role not in ["student", "instructor"]:
+                    return Response(
+                        {"error": f"Invalid role '{role}'. Must be student or instructor."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                if college not in valid_colleges:
+                    college = self.DEFAULT_COLLEGE
+
+                _, is_created = ApprovedSchoolID.objects.get_or_create(
+                    school_id=school_id,
+                    defaults={
+                        "first_name": first_name,
+                        "middle_initial": middle_initial,
+                        "last_name": last_name,
+                        "role": role,
+                        "college": college,
+                        "initial_password": initial_password,
+                    }
+                )
+
+                created += 1 if is_created else 0
+                existing += 0 if is_created else 1
+
+            return Response({
+                "message": "Upload complete",
+                "new_records": created,
+                "already_existing": existing
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        

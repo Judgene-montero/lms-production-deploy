@@ -1,0 +1,1240 @@
+{
+  "test_results": [
+    {
+      "test_case_id": "TC01",
+      "description": "Clean JSON with mixed types and complete fields",
+      "input": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "Section 1: Multiple Choice",
+            "type": "multiple_choice",
+            "instructions": "Choose",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Which component stores charge?",
+                "type": "multiple_choice",
+                "choices": [
+                  "Resistor",
+                  "Capacitor",
+                  "LED",
+                  "Switch"
+                ],
+                "correct_answer": "B",
+                "points": 2
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Section 2: True/False",
+            "type": "true_false",
+            "questions": [
+              {
+                "id": 2,
+                "number": 2,
+                "question": "Arduino runs sketches.",
+                "type": "true_false",
+                "correct_answer": "true",
+                "points": 2
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Section 3: Coding",
+            "type": "coding",
+            "questions": [
+              {
+                "id": 3,
+                "number": 3,
+                "question": "Write blink code.",
+                "type": "coding",
+                "correct_answer": "void loop(){}",
+                "starter_code": "void setup(){}",
+                "expected_output": "",
+                "test_cases": "compiles",
+                "points": 5
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "Section 1: Multiple Choice",
+            "type": "multiple_choice",
+            "instructions": "Choose",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Which component stores charge?",
+                "type": "multiple_choice",
+                "choices": [
+                  "Resistor",
+                  "Capacitor",
+                  "LED",
+                  "Switch"
+                ],
+                "correct_answer": "B",
+                "points": 2,
+                "question_text": "Which component stores charge?",
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "Resistor"
+                  },
+                  {
+                    "id": 2,
+                    "text": "Capacitor"
+                  },
+                  {
+                    "id": 3,
+                    "text": "LED"
+                  },
+                  {
+                    "id": 4,
+                    "text": "Switch"
+                  }
+                ],
+                "answer_key": "B",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "correct_answer_text": "Capacitor"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Section 2: True/False",
+            "type": "true_false",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 2,
+                "number": 2,
+                "question": "Arduino runs sketches.",
+                "type": "true_false",
+                "correct_answer": "TRUE",
+                "points": 2,
+                "question_text": "Arduino runs sketches.",
+                "choices": [
+                  "True",
+                  "False"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "True"
+                  },
+                  {
+                    "id": 2,
+                    "text": "False"
+                  }
+                ],
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": ""
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Section 3: Coding",
+            "type": "coding",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 3,
+                "number": 3,
+                "question": "Write blink code.",
+                "type": "coding",
+                "correct_answer": "void loop(){}",
+                "starter_code": "void setup(){}",
+                "expected_output": "void loop(){}",
+                "test_cases": "compiles",
+                "points": 5,
+                "question_text": "Write blink code.",
+                "choices": [],
+                "options": [],
+                "answer_key": "",
+                "acceptable_answers": []
+              }
+            ]
+          }
+        ],
+        "line_count": 1,
+        "answer_map": {},
+        "notes": [],
+        "stats": {
+          "sections_count": 3,
+          "questions_count": 3,
+          "questions_with_correct_answer": 3
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC02",
+      "description": "Messy JSON missing fields, extra metadata, inconsistent options/choices",
+      "input": {
+        "meta": {
+          "source": "legacy"
+        },
+        "sections": [
+          {
+            "title": "  MCQ  ",
+            "type": "multiple choice",
+            "questions": [
+              {
+                "number": "1",
+                "question_text": "Pick output device",
+                "choices": [
+                  "LED,",
+                  " LED ",
+                  "",
+                  null
+                ],
+                "options": [
+                  {
+                    "id": 2,
+                    "text": "Buzzer"
+                  },
+                  {
+                    "text": "LED"
+                  }
+                ],
+                "answer_key": "a",
+                "extra_field": "keep-safe"
+              },
+              {
+                "number": "2",
+                "question": "Malformed no type but has TF hint (True / False)",
+                "correct_answer": "FALSE"
+              }
+            ]
+          }
+        ]
+      },
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "MCQ",
+            "type": "multiple_choice",
+            "instructions": "",
+            "questions": [
+              {
+                "number": 1,
+                "question_text": "Pick output device",
+                "choices": [
+                  "LED",
+                  "Buzzer"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "LED"
+                  },
+                  {
+                    "id": 2,
+                    "text": "Buzzer"
+                  }
+                ],
+                "answer_key": "A",
+                "extra_field": "keep-safe",
+                "id": 1,
+                "question": "Pick output device",
+                "type": "multiple_choice",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1,
+                "correct_answer": "A",
+                "correct_answer_text": "LED"
+              },
+              {
+                "number": 2,
+                "question": "Malformed no type but has TF hint (True / False)",
+                "correct_answer": "FALSE",
+                "id": 2,
+                "question_text": "Malformed no type but has TF hint (True / False)",
+                "type": "multiple_choice",
+                "choices": [],
+                "options": [],
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              }
+            ]
+          }
+        ],
+        "line_count": 1,
+        "answer_map": {},
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 2,
+          "questions_with_correct_answer": 2
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC03",
+      "description": "Plain text with compact inline answer key list (1-A, 2-B)",
+      "input": "1. Which runs once?\nA. loop() B. setup() C. run() D. start()\n2. Output device?\nA. Sensor B. LED C. Input D. Wire\nAnswer Key:\n1-A, 2-B",
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "General Section",
+            "type": "identification",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Which runs once?",
+                "question_text": "Which runs once?",
+                "type": "multiple_choice",
+                "choices": [
+                  "loop()",
+                  "setup()",
+                  "run()",
+                  "start()"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "loop()"
+                  },
+                  {
+                    "id": 2,
+                    "text": "setup()"
+                  },
+                  {
+                    "id": 3,
+                    "text": "run()"
+                  },
+                  {
+                    "id": 4,
+                    "text": "start()"
+                  }
+                ],
+                "correct_answer": "A, 2-B",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 2,
+                "number": 2,
+                "question": "Output device?",
+                "question_text": "Output device?",
+                "type": "multiple_choice",
+                "choices": [
+                  "Sensor",
+                  "LED",
+                  "Input",
+                  "Wire"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "Sensor"
+                  },
+                  {
+                    "id": 2,
+                    "text": "LED"
+                  },
+                  {
+                    "id": 3,
+                    "text": "Input"
+                  },
+                  {
+                    "id": 4,
+                    "text": "Wire"
+                  }
+                ],
+                "correct_answer": "A, 2-B",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              }
+            ]
+          }
+        ],
+        "line_count": 5,
+        "answer_map": {
+          "1": "A, 2-B"
+        },
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 2,
+          "questions_with_correct_answer": 2
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC04",
+      "description": "Mixed MCQ formats vertical + horizontal + bracketed inline answers",
+      "input": "Part 1: Multiple Choice\n1) Which stores energy? A. Resistor B. Capacitor C. LED D. Switch [Answer: B]\n2. Which runs once?\nA) loop()\nB) setup()\nC) run()\nD) start()\nAnswer: B",
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "Part 1: Multiple Choice",
+            "type": "multiple_choice",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Which stores energy?",
+                "question_text": "Which stores energy?",
+                "type": "multiple_choice",
+                "choices": [
+                  "Resistor",
+                  "Capacitor",
+                  "LED",
+                  "Switch"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "Resistor"
+                  },
+                  {
+                    "id": 2,
+                    "text": "Capacitor"
+                  },
+                  {
+                    "id": 3,
+                    "text": "LED"
+                  },
+                  {
+                    "id": 4,
+                    "text": "Switch"
+                  }
+                ],
+                "correct_answer": "B",
+                "answer_key": "B",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1,
+                "correct_answer_text": "Capacitor"
+              },
+              {
+                "id": 2,
+                "number": 2,
+                "question": "Which runs once?",
+                "question_text": "Which runs once?",
+                "type": "multiple_choice",
+                "choices": [
+                  "loop()",
+                  "setup()",
+                  "run()",
+                  "start()"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "loop()"
+                  },
+                  {
+                    "id": 2,
+                    "text": "setup()"
+                  },
+                  {
+                    "id": 3,
+                    "text": "run()"
+                  },
+                  {
+                    "id": 4,
+                    "text": "start()"
+                  }
+                ],
+                "correct_answer": "B",
+                "answer_key": "B",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1,
+                "correct_answer_text": "setup()"
+              }
+            ]
+          }
+        ],
+        "line_count": 8,
+        "answer_map": {
+          "1": "B",
+          "2": "B"
+        },
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 2,
+          "questions_with_correct_answer": 2
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC05",
+      "description": "True/False variations (T/F, TRUE/FALSE, 1/0, lowercase)",
+      "input": "True or False:\n1. Arduino uses digital pins.\nAnswer: T\n2. delay(1000) is 2 seconds.\nAns: false\n3. setup() runs repeatedly.\nAns= 0\n4. loop() runs repeatedly.\n? true",
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "True or False:",
+            "type": "true_false",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Arduino uses digital pins.",
+                "question_text": "Arduino uses digital pins.",
+                "type": "true_false",
+                "choices": [
+                  "True",
+                  "False"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "True"
+                  },
+                  {
+                    "id": 2,
+                    "text": "False"
+                  }
+                ],
+                "correct_answer": "TRUE",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 2,
+                "number": 2,
+                "question": "delay(1000) is 2 seconds.",
+                "question_text": "delay(1000) is 2 seconds.",
+                "type": "true_false",
+                "choices": [
+                  "True",
+                  "False"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "True"
+                  },
+                  {
+                    "id": 2,
+                    "text": "False"
+                  }
+                ],
+                "correct_answer": "FALSE",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 3,
+                "number": 3,
+                "question": "setup() runs repeatedly.",
+                "question_text": "setup() runs repeatedly.",
+                "type": "true_false",
+                "choices": [
+                  "True",
+                  "False"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "True"
+                  },
+                  {
+                    "id": 2,
+                    "text": "False"
+                  }
+                ],
+                "correct_answer": "FALSE",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 4,
+                "number": 4,
+                "question": "loop() runs repeatedly. ? true",
+                "question_text": "loop() runs repeatedly. ? true",
+                "type": "true_false",
+                "choices": [
+                  "True",
+                  "False"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "True"
+                  },
+                  {
+                    "id": 2,
+                    "text": "False"
+                  }
+                ],
+                "correct_answer": "",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              }
+            ]
+          }
+        ],
+        "line_count": 9,
+        "answer_map": {
+          "1": "T",
+          "2": "FALSE",
+          "3": "0"
+        },
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 4,
+          "questions_with_correct_answer": 3
+        }
+      },
+      "warnings": [
+        "Missing answer for question 4"
+      ],
+      "confidence_score": 79,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC06",
+      "description": "Empty payload",
+      "input": "",
+      "output": {
+        "sections": [],
+        "line_count": 0,
+        "answer_map": {},
+        "notes": [],
+        "stats": {
+          "sections_count": 0,
+          "questions_count": 0,
+          "questions_with_correct_answer": 0
+        }
+      },
+      "warnings": [
+        "Sections detected but no questions attached.",
+        "No questions parsed. Likely format mismatch."
+      ],
+      "confidence_score": 70,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC07",
+      "description": "Partial payload: sections missing or malformed question lists",
+      "input": {
+        "sections": [
+          {
+            "title": "Identification",
+            "type": "identification"
+          },
+          {
+            "title": "Coding",
+            "questions": "not-an-array"
+          },
+          "bad-section-row"
+        ]
+      },
+      "output": {
+        "sections": [],
+        "line_count": 1,
+        "answer_map": {},
+        "notes": [],
+        "stats": {
+          "sections_count": 0,
+          "questions_count": 0,
+          "questions_with_correct_answer": 0
+        }
+      },
+      "warnings": [
+        "Section 'Identification' has malformed questions payload; treated as empty.",
+        "Section 'Coding' has malformed questions payload; treated as empty.",
+        "Skipped malformed section payload at index 3."
+      ],
+      "confidence_score": 64,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC08",
+      "description": "Multiline coding answers in answer key",
+      "input": "Part 1: Coding\n1. Blink LED on pin 13\n2. Read pin 2 and drive pin 13\nAnswer Key\nCoding:\n1.\nvoid setup(){\n pinMode(13,OUTPUT);\n}\nvoid loop(){\n digitalWrite(13,HIGH);\n delay(1000);\n}\n2.\nvoid setup(){\n pinMode(2,INPUT);\n pinMode(13,OUTPUT);\n}\nvoid loop(){\n int v=digitalRead(2);\n if(v==HIGH){ digitalWrite(13,HIGH);}\n else{ digitalWrite(13,LOW);}\n}",
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "Part 1: Coding",
+            "type": "coding",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Blink LED on pin 13",
+                "question_text": "Blink LED on pin 13",
+                "type": "coding",
+                "choices": [],
+                "options": [],
+                "correct_answer": "void setup(){\npinMode(13,OUTPUT);\n}\nvoid loop(){\ndigitalWrite(13,HIGH);\ndelay(1000);\n}",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "void setup(){\npinMode(13,OUTPUT);\n}\nvoid loop(){\ndigitalWrite(13,HIGH);\ndelay(1000);\n}",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 2,
+                "number": 2,
+                "question": "Read pin 2 and drive pin 13",
+                "question_text": "Read pin 2 and drive pin 13",
+                "type": "coding",
+                "choices": [],
+                "options": [],
+                "correct_answer": "void setup(){\npinMode(2,INPUT);\npinMode(13,OUTPUT);\n}\nvoid loop(){\nint v=digitalRead(2);\nif(v==HIGH){ digitalWrite(13,HIGH);}\nelse{ digitalWrite(13,LOW);}\n}",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "void setup(){\npinMode(2,INPUT);\npinMode(13,OUTPUT);\n}\nvoid loop(){\nint v=digitalRead(2);\nif(v==HIGH){ digitalWrite(13,HIGH);}\nelse{ digitalWrite(13,LOW);}\n}",
+                "test_cases": "",
+                "points": 1
+              }
+            ]
+          }
+        ],
+        "line_count": 22,
+        "answer_map": {
+          "1": "void setup(){\npinMode(13,OUTPUT);\n}\nvoid loop(){\ndigitalWrite(13,HIGH);\ndelay(1000);\n}",
+          "2": "void setup(){\npinMode(2,INPUT);\npinMode(13,OUTPUT);\n}\nvoid loop(){\nint v=digitalRead(2);\nif(v==HIGH){ digitalWrite(13,HIGH);}\nelse{ digitalWrite(13,LOW);}\n}"
+        },
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 2,
+          "questions_with_correct_answer": 2
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC09",
+      "description": "Mixed question types in one section with missing type per question",
+      "input": {
+        "title": "General Exam",
+        "questions": [
+          {
+            "number": 1,
+            "question": "Which stores charge?",
+            "choices": [
+              "Resistor",
+              "Capacitor",
+              "LED",
+              "Switch"
+            ],
+            "correct_answer": "B",
+            "points": 2
+          },
+          {
+            "number": 2,
+            "question": "Arduino uses digital signals (True/False)",
+            "correct_answer": "True",
+            "points": 2
+          },
+          {
+            "number": 3,
+            "question": "Name one microcontroller board",
+            "correct_answer": "Arduino Uno",
+            "points": 2
+          },
+          {
+            "number": 4,
+            "question": "List 3 components",
+            "type": "enumeration",
+            "correct_answer": "board, resistor, led",
+            "points": 3
+          },
+          {
+            "number": 5,
+            "question": "Write code to blink LED",
+            "type": "coding",
+            "correct_answer": "delay(200);",
+            "points": 5
+          }
+        ]
+      },
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "General Exam",
+            "type": "identification",
+            "instructions": "",
+            "questions": [
+              {
+                "number": 1,
+                "question": "Which stores charge?",
+                "choices": [
+                  "Resistor",
+                  "Capacitor",
+                  "LED",
+                  "Switch"
+                ],
+                "correct_answer": "B",
+                "points": 2,
+                "id": 1,
+                "question_text": "Which stores charge?",
+                "type": "identification",
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "Resistor"
+                  },
+                  {
+                    "id": 2,
+                    "text": "Capacitor"
+                  },
+                  {
+                    "id": 3,
+                    "text": "LED"
+                  },
+                  {
+                    "id": 4,
+                    "text": "Switch"
+                  }
+                ],
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": ""
+              },
+              {
+                "number": 2,
+                "question": "Arduino uses digital signals (True/False)",
+                "correct_answer": "TRUE",
+                "points": 2,
+                "id": 2,
+                "question_text": "Arduino uses digital signals (True/False)",
+                "type": "true_false",
+                "choices": [
+                  "True",
+                  "False"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "True"
+                  },
+                  {
+                    "id": 2,
+                    "text": "False"
+                  }
+                ],
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": ""
+              },
+              {
+                "number": 3,
+                "question": "Name one microcontroller board",
+                "correct_answer": "Arduino Uno",
+                "points": 2,
+                "id": 3,
+                "question_text": "Name one microcontroller board",
+                "type": "identification",
+                "choices": [],
+                "options": [],
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": ""
+              },
+              {
+                "number": 4,
+                "question": "List 3 components",
+                "type": "enumeration",
+                "correct_answer": "board, resistor, led",
+                "points": 3,
+                "id": 4,
+                "question_text": "List 3 components",
+                "choices": [],
+                "options": [],
+                "answer_key": "",
+                "acceptable_answers": [
+                  "board",
+                  "resistor",
+                  "led"
+                ],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": ""
+              },
+              {
+                "number": 5,
+                "question": "Write code to blink LED",
+                "type": "coding",
+                "correct_answer": "delay(200);",
+                "points": 5,
+                "id": 5,
+                "question_text": "Write code to blink LED",
+                "choices": [],
+                "options": [],
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "delay(200);",
+                "test_cases": ""
+              }
+            ]
+          }
+        ],
+        "line_count": 1,
+        "answer_map": {},
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 5,
+          "questions_with_correct_answer": 5
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC10",
+      "description": "Malformed JSON shape (non-list sections)",
+      "input": {
+        "sections": {
+          "title": "Bad shape"
+        },
+        "foo": "bar"
+      },
+      "output": {
+        "sections": [],
+        "line_count": 1,
+        "answer_map": {},
+        "notes": [],
+        "stats": {
+          "sections_count": 0,
+          "questions_count": 0,
+          "questions_with_correct_answer": 0
+        }
+      },
+      "warnings": [
+        "JSON payload detected but no sections/questions were found."
+      ],
+      "confidence_score": 76,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC11",
+      "description": "Inline punctuation-rich answers and bracketed number tags",
+      "input": "1. Sends data to serial monitor. [Answer #1: Serial.println()]\n2. Evaluate expression result. [Ans #2: x++ + y--]\n3. Is LED output? -> true\n4. Function call sample [Answer: foo(bar)]",
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "General Section",
+            "type": "identification",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Sends data to serial monitor.",
+                "question_text": "Sends data to serial monitor.",
+                "type": "identification",
+                "choices": [],
+                "options": [],
+                "correct_answer": "Serial.println()",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 2,
+                "number": 2,
+                "question": "Evaluate expression result.",
+                "question_text": "Evaluate expression result.",
+                "type": "identification",
+                "choices": [],
+                "options": [],
+                "correct_answer": "x++ + y--",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 3,
+                "number": 3,
+                "question": "Is LED output?",
+                "question_text": "Is LED output?",
+                "type": "identification",
+                "choices": [],
+                "options": [],
+                "correct_answer": "TRUE",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 4,
+                "number": 4,
+                "question": "Function call sample",
+                "question_text": "Function call sample",
+                "type": "identification",
+                "choices": [],
+                "options": [],
+                "correct_answer": "foo(bar)",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              }
+            ]
+          }
+        ],
+        "line_count": 4,
+        "answer_map": {
+          "1": "Serial.println()",
+          "2": "x++ + y--",
+          "3": "TRUE",
+          "4": "foo(bar)"
+        },
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 4,
+          "questions_with_correct_answer": 4
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    },
+    {
+      "test_case_id": "TC12",
+      "description": "Pipe-delimited format with answer lines",
+      "input": "1|Which is output?|A.LED|B.Button|C.Sensor|D.Switch\nAnswer|A\n2|setup runs once|True/False\nAnswer|TRUE\n3|Pin mode output keyword|A.INPUT|B.OUTPUT|C.HIGH|D.LOW\nAnswer|B",
+      "output": {
+        "sections": [
+          {
+            "id": 1,
+            "title": "General Section",
+            "type": "identification",
+            "instructions": "",
+            "questions": [
+              {
+                "id": 1,
+                "number": 1,
+                "question": "Which is output?",
+                "question_text": "Which is output?",
+                "type": "multiple_choice",
+                "choices": [
+                  "LED",
+                  "Button",
+                  "Sensor",
+                  "Switch"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "LED"
+                  },
+                  {
+                    "id": 2,
+                    "text": "Button"
+                  },
+                  {
+                    "id": 3,
+                    "text": "Sensor"
+                  },
+                  {
+                    "id": 4,
+                    "text": "Switch"
+                  }
+                ],
+                "correct_answer": "A",
+                "answer_key": "A",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1,
+                "correct_answer_text": "LED"
+              },
+              {
+                "id": 2,
+                "number": 2,
+                "question": "setup runs once",
+                "question_text": "setup runs once",
+                "type": "true_false",
+                "choices": [
+                  "True",
+                  "False"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "True"
+                  },
+                  {
+                    "id": 2,
+                    "text": "False"
+                  }
+                ],
+                "correct_answer": "TRUE",
+                "answer_key": "",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1
+              },
+              {
+                "id": 3,
+                "number": 3,
+                "question": "Pin mode output keyword",
+                "question_text": "Pin mode output keyword",
+                "type": "multiple_choice",
+                "choices": [
+                  "INPUT",
+                  "OUTPUT",
+                  "HIGH",
+                  "LOW"
+                ],
+                "options": [
+                  {
+                    "id": 1,
+                    "text": "INPUT"
+                  },
+                  {
+                    "id": 2,
+                    "text": "OUTPUT"
+                  },
+                  {
+                    "id": 3,
+                    "text": "HIGH"
+                  },
+                  {
+                    "id": 4,
+                    "text": "LOW"
+                  }
+                ],
+                "correct_answer": "B",
+                "answer_key": "B",
+                "acceptable_answers": [],
+                "starter_code": "",
+                "expected_output": "",
+                "test_cases": "",
+                "points": 1,
+                "correct_answer_text": "OUTPUT"
+              }
+            ]
+          }
+        ],
+        "line_count": 6,
+        "answer_map": {
+          "1": "A",
+          "2": "TRUE",
+          "3": "B"
+        },
+        "notes": [],
+        "stats": {
+          "sections_count": 1,
+          "questions_count": 3,
+          "questions_with_correct_answer": 3
+        }
+      },
+      "warnings": [],
+      "confidence_score": 90,
+      "pass_fail": "PASS"
+    }
+  ],
+  "summary": {
+    "total_test_cases": 12,
+    "passed": 12,
+    "failed": 0,
+    "total_sections_parsed": 11,
+    "total_questions_parsed": 27,
+    "total_warnings": 7,
+    "overall_confidence_score": 84.08
+  }
+}
