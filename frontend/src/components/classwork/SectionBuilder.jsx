@@ -41,14 +41,14 @@ export default function SectionBuilder({ onOpenQuestionBank }) {
 
   useEffect(() => {
     setCollapsedMap((prev) => {
-      const next = { ...prev };
+      const activeKeys = new Set(sections.map((section) => String(section.id)));
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([key]) => activeKeys.has(key))
+      );
       sections.forEach((section) => {
         const key = String(section.id);
         if (typeof next[key] === "undefined") {
           next[key] = false;
-        }
-        if (isSectionCompleted(section)) {
-          next[key] = true;
         }
       });
       return next;
@@ -136,11 +136,10 @@ export default function SectionBuilder({ onOpenQuestionBank }) {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 placeholder={`Section ${sectionIndex + 1}`}
               />
-              {collapsedMap[String(section.id)] ? (
-                <p className="mt-1 text-xs text-gray-600">
-                  {section.questions?.length || 0} question(s) in this section
-                </p>
-              ) : null}
+              <p className="mt-1 text-xs text-gray-600">
+                {section.questions?.length || 0} question(s) in this section
+                {isSectionCompleted(section) ? " - Completed" : ""}
+              </p>
             </div>
             <button
               type="button"

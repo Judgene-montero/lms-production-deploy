@@ -15,6 +15,7 @@ import StudentCourseDetails from "./pages/Student/StudentCourseDetails";
 import StudentExamTakePage from "./pages/Student/StudentExamTakePage";
 import ExamReviewPage from "./pages/Student/ExamReviewPage";
 import StudentLessonsPage from "./pages/Student/StudentLessonsPage";
+import MeetingsPage from "./pages/MeetingsPage";
 
 import InstructorDashboard from "./pages/Instructor/InstructorDashboards";
 import InstructorCourses from "./pages/Instructor/courses/InstructorCourses";
@@ -45,12 +46,15 @@ import Students from "./pages/Instructor/Students";
 import InstructorProfile from "./pages/Instructor/Profile";
 
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminCourses from "./pages/AdminCourses";
 import AdminUploadIDs from "./pages/AdminUploadIDs";
 import AdminUserManagement from "./pages/AdminUserManagement";
 import AdminInstructorApprovals from "./pages/AdminInstructorApprovals";
 import AdminAnalytics from "./pages/AdminAnalytics";
+import AdminCategories from "./pages/AdminCategories";
 import AdminSettings from "./pages/AdminSettings";
 import AdminLogs from "./pages/AdminLogs";
+import AdminCourseDetail from "./pages/AdminCourseDetail";
 
 import AdminLayout from "./layouts/AdminLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -110,8 +114,11 @@ const App = () => {
       { index: true, element: <AdminDashboard /> },
       { path: "dashboard", element: <AdminDashboard /> },
       { path: "users", element: <AdminUserManagement /> },
+      { path: "courses", element: <AdminCourses /> },
+      { path: "courses/:courseId", element: <AdminCourseDetail /> },
       { path: "instructor-approvals", element: <AdminInstructorApprovals /> },
       { path: "analytics", element: <AdminAnalytics /> },
+      { path: "categories", element: <AdminCategories /> },
       { path: "settings", element: <AdminSettings /> },
       { path: "logs", element: <AdminLogs /> },
       { path: "upload-ids", element: <AdminUploadIDs /> },
@@ -140,6 +147,15 @@ const App = () => {
 
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
+
+        <Route
+          path="/courses/:courseId/meetings"
+          element={
+            <ProtectedRoute allowedRoles={["student", "instructor"]}>
+              <MeetingsPage />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/student/dashboard"

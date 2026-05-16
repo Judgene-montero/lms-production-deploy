@@ -13,6 +13,8 @@ from .views import (
     ApproveInstructorView,
     AdminUserListView,
     AdminUserDetailView,
+    AdminUserActivityView,
+    AdminUserResetPasswordView,
     AdminBulkStatusView,
     AdminSettingsView,
     AdminLogsView,
@@ -44,6 +46,8 @@ urlpatterns = [
     path("admin/instructor-approve/<int:user_id>/", ApproveInstructorView.as_view(), name="approve-instructor"),
     path("admin/users/", AdminUserListView.as_view(), name="admin-users"),
     path("admin/users/<int:user_id>/", AdminUserDetailView.as_view(), name="admin-user-detail"),
+    path("admin/users/<int:user_id>/activity/", AdminUserActivityView.as_view(), name="admin-user-activity"),
+    path("admin/users/<int:user_id>/reset-password/", AdminUserResetPasswordView.as_view(), name="admin-user-reset-password"),
     path("admin/bulk-status/", AdminBulkStatusView.as_view(), name="admin-bulk-status"),
 
     # Admin settings and logs (also exposed under /api/admin/* in core urls)

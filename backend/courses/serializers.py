@@ -22,27 +22,44 @@ from .models import (
     SubmissionAttachment,
     AttendanceSession,
     AttendanceRecord,
+    Meeting,
     QuizAttempt,
     QuizAttemptAnswer,
     QuizAttemptScoreAudit,
     ClassworkDraft,
     QuestionBankItem,
     QuizSecurityEvent,
+    EnrollmentRequest,
 )
 from .services.grading import ACTIVITY_CATEGORY_LABELS, evaluate_custom_formula, validate_custom_transmutation_table
-from users_app.models import Course
+from users_app.models import Category, Course
 
 # -----------------------------
 # Course Serializer
 # -----------------------------
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ["id", "name"]
+        read_only_fields = ["id"]
+
+
 class CourseSerializer(serializers.ModelSerializer):
-    thumbnail = serializers.SerializerMethodField()
+    category = CategorySerializer(read_only=True)
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source="category",
+        write_only=True,
+        required=False,
+    )
+    thumbnail = serializers.ImageField(required=False, allow_null=True, use_url=True)
     is_instructor = serializers.SerializerMethodField()
     students_count = serializers.SerializerMethodField()
     lessons_count = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     state = serializers.SerializerMethodField()
     code = serializers.SerializerMethodField()
+    scheduled_start_at = serializers.SerializerMethodField()
     join_code = serializers.CharField(read_only=True)
     join_code_enabled = serializers.BooleanField(read_only=True)
     join_code_expiration = serializers.DateTimeField(read_only=True)
@@ -54,7 +71,11 @@ class CourseSerializer(serializers.ModelSerializer):
             'title',
             'description',
             'category',
+            'category_id',
             'thumbnail',
+            'start_date',
+            'start_time',
+            'scheduled_start_at',
             'instructor',
             'is_instructor',
             'students_count',
@@ -65,15 +86,43 @@ class CourseSerializer(serializers.ModelSerializer):
             'code',
             'join_code',
             'join_code_enabled',
-            'join_code_expiration'
+            'join_code_expiration',
         ]
         read_only_fields = ['id', 'instructor']
 
-    def get_thumbnail(self, obj):
+    def to_internal_value(self, data):
+        mutable_data = data.copy() if hasattr(data, "copy") else dict(data)
+        if mutable_data.get("category_id") in (None, "") and mutable_data.get("category") not in (None, ""):
+            raw_category = mutable_data.get("category")
+            if str(raw_category).isdigit():
+                mutable_data["category_id"] = raw_category
+        return super().to_internal_value(mutable_data)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
         request = self.context.get("request")
-        if obj.thumbnail:
-            return request.build_absolute_uri(obj.thumbnail.url)
-        return None
+        if instance.thumbnail:
+            try:
+                thumbnail_url = instance.thumbnail.url
+            except (AttributeError, ValueError):
+                thumbnail_url = None
+            if thumbnail_url:
+                data["thumbnail"] = request.build_absolute_uri(thumbnail_url) if request else thumbnail_url
+        else:
+            data["thumbnail"] = None
+        return data
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        category = attrs.get("category", getattr(instance, "category", None))
+        if instance is None and category is None:
+            raise serializers.ValidationError({"category_id": "Category is required."})
+
+        has_start_date = "start_date" in attrs
+        has_start_time = "start_time" in attrs
+        if has_start_date != has_start_time:
+            raise serializers.ValidationError("start_date and start_time must be provided together.")
+        return attrs
 
     def get_is_instructor(self, obj):
         request = self.context.get("request")
@@ -98,13 +147,16 @@ class CourseSerializer(serializers.ModelSerializer):
         return obj.lessons.count()
 
     def get_status(self, obj):
-        return "archived" if bool(getattr(obj, "is_archived", False)) else "active"
+        return obj.get_status()
 
     def get_state(self, obj):
         return self.get_status(obj)
 
     def get_code(self, obj):
         return obj.join_code
+
+    def get_scheduled_start_at(self, obj):
+        return obj.get_start_datetime()
 # -----------------------------
 # Lesson Serializer
 # -----------------------------
@@ -1234,6 +1286,56 @@ class AttendanceSessionSerializer(serializers.ModelSerializer):
         return AttendanceRecordSerializer(record).data
 
 
+class MeetingSerializer(serializers.ModelSerializer):
+    created_by_id = serializers.IntegerField(source="created_by.id", read_only=True)
+    created_by_username = serializers.CharField(source="created_by.username", read_only=True)
+
+    class Meta:
+        model = Meeting
+        fields = [
+            "id",
+            "course",
+            "title",
+            "scheduled_time",
+            "meeting_link",
+            "created_by_id",
+            "created_by_username",
+            "created_at",
+        ]
+        read_only_fields = ["id", "course", "created_by_id", "created_by_username", "created_at"]
+
+
+class EnrollmentRequestSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+    student_email = serializers.EmailField(source="student.email", read_only=True)
+    student_school_id = serializers.CharField(source="student.school_id", read_only=True)
+    course_name = serializers.CharField(source="course.title", read_only=True)
+    reviewed_by_name = serializers.CharField(source="reviewed_by.username", read_only=True)
+
+    class Meta:
+        model = EnrollmentRequest
+        fields = [
+            "id",
+            "course",
+            "course_name",
+            "student",
+            "student_name",
+            "student_email",
+            "student_school_id",
+            "status",
+            "created_at",
+            "updated_at",
+            "reviewed_at",
+            "reviewed_by",
+            "reviewed_by_name",
+        ]
+        read_only_fields = fields
+
+    def get_student_name(self, obj):
+        full_name = obj.student.full_name()
+        return full_name or obj.student.username
+
+
 class GradingComponentSerializer(serializers.ModelSerializer):
     class Meta:
         model = GradingComponent
@@ -1314,6 +1416,13 @@ class GradingSchemeSerializer(serializers.ModelSerializer):
             custom_config = {}
         allow_overlap = self._as_bool(custom_config.get("allow_component_overlap", False), default=False)
         allow_legacy_mapping = self._as_bool(custom_config.get("allow_legacy_component_mapping", True), default=True)
+        auto_detect_activities = self._as_bool(custom_config.get("auto_detect_activities", True), default=True)
+        component_rules = custom_config.get("component_rules") if isinstance(custom_config.get("component_rules"), list) else []
+        rule_names = {
+            str(item.get("component_name") or item.get("name") or "").strip().lower()
+            for item in component_rules
+            if isinstance(item, dict)
+        }
 
         course_activities = []
         course_activity_ids = set()
@@ -1351,6 +1460,16 @@ class GradingSchemeSerializer(serializers.ModelSerializer):
                 except (TypeError, ValueError) as exc:
                     raise serializers.ValidationError("Component activity_ids must contain integers.") from exc
             unique_ids = sorted(set(cleaned_ids))
+            if course_activity_ids:
+                unknown_ids = [activity_id for activity_id in unique_ids if activity_id not in course_activity_ids]
+                if unknown_ids:
+                    has_rule = str(item.get("name", "")).strip().lower() in rule_names
+                    if auto_detect_activities or has_rule:
+                        unique_ids = [activity_id for activity_id in unique_ids if activity_id in course_activity_ids]
+                    else:
+                        raise serializers.ValidationError(
+                            f'Component "{item.get("name", "")}" references unknown activities.'
+                        )
             if not unique_ids:
                 if not allow_legacy_mapping:
                     raise serializers.ValidationError(
@@ -1358,10 +1477,6 @@ class GradingSchemeSerializer(serializers.ModelSerializer):
                     )
                 item["activity_ids"] = []
                 continue
-            if course_activity_ids and any(activity_id not in course_activity_ids for activity_id in unique_ids):
-                raise serializers.ValidationError(
-                    f'Component "{item.get("name", "")}" references unknown activities.'
-                )
             if not allow_overlap:
                 for activity_id in unique_ids:
                     previous_component = seen_activity_to_component.get(activity_id)

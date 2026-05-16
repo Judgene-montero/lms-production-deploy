@@ -9,12 +9,16 @@ const PerformanceChart = lazy(() => import("./charts/PerformanceChart"));
 
 const PREDICTION_PAGE_SIZE = 10;
 
+const formatMetricPercent = (value) => `${(Number(value || 0) * 100).toFixed(1)}%`;
+
 const ChartShell = ({ title }) => (
   <div className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
     <p className="text-sm font-semibold text-emerald-900">{title}</p>
     <div className="mt-3 h-56 animate-pulse rounded-lg bg-emerald-50" />
   </div>
 );
+
+const SectionShell = ({ className = "h-48" }) => <div className={`animate-pulse rounded-xl bg-emerald-50 ${className}`} />;
 
 const MemoEnrollmentChart = memo(function MemoEnrollmentChart({ data }) {
   return <EnrollmentChart data={data} />;
@@ -55,7 +59,7 @@ const PredictionTable = memo(function PredictionTable({
               <th className="px-4 py-2 text-left">Course Name</th>
               <th className="px-4 py-2 text-left">Predicted Outcome</th>
               <th className="px-4 py-2 text-left">Risk Level</th>
-              <th className="px-4 py-2 text-left">Confidence Score</th>
+              <th className="px-4 py-2 text-left">Failure Probability</th>
               <th className="px-4 py-2 text-left">Explanation</th>
             </tr>
           </thead>
@@ -76,7 +80,7 @@ const PredictionTable = memo(function PredictionTable({
                 >
                   {String(row.riskLevel).toUpperCase()}
                 </td>
-                <td className="px-4 py-2 text-gray-700">{row.confidence}%</td>
+                <td className="px-4 py-2 text-gray-700">{row.failureProbability}%</td>
                 <td className="min-w-80 px-4 py-2 text-gray-600">{row.explanation}</td>
               </tr>
             ))}
@@ -124,6 +128,88 @@ const PredictionTable = memo(function PredictionTable({
   );
 });
 
+const ModelEvaluationPanel = memo(function ModelEvaluationPanel({ metrics }) {
+  const metricCards = [
+    { label: "Total Samples", value: metrics?.total_samples ?? metrics?.samples ?? 0 },
+    { label: "Train Samples", value: metrics?.train_samples ?? 0 },
+    { label: "Test Samples", value: metrics?.test_samples ?? 0 },
+    { label: "TP", value: metrics?.TP ?? metrics?.true_positive ?? 0 },
+    { label: "TN", value: metrics?.TN ?? metrics?.true_negative ?? 0 },
+    { label: "FP", value: metrics?.FP ?? metrics?.false_positive ?? 0 },
+    { label: "FN", value: metrics?.FN ?? metrics?.false_negative ?? 0 },
+    { label: "Accuracy", value: formatMetricPercent(metrics?.accuracy) },
+    { label: "Precision", value: formatMetricPercent(metrics?.precision) },
+    { label: "Recall", value: formatMetricPercent(metrics?.recall) },
+    { label: "F1 Score", value: formatMetricPercent(metrics?.f1_score) },
+  ];
+  const confusionValues = [
+    { label: "TP", value: metrics?.TP ?? metrics?.true_positive ?? 0, tone: "text-emerald-700" },
+    { label: "FN", value: metrics?.FN ?? metrics?.false_negative ?? 0, tone: "text-red-600" },
+    { label: "FP", value: metrics?.FP ?? metrics?.false_positive ?? 0, tone: "text-amber-600" },
+    { label: "TN", value: metrics?.TN ?? metrics?.true_negative ?? 0, tone: "text-emerald-700" },
+  ];
+
+  return (
+    <section className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-emerald-900">Model Evaluation</h3>
+          <p className="mt-1 text-sm text-gray-600">
+            Held-out RandomForest test-set evaluation saved from the latest training run.
+          </p>
+        </div>
+        <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase text-emerald-700">
+          Test Set Only
+        </span>
+      </div>
+
+      {metrics?.message ? (
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {metrics.message}
+        </p>
+      ) : null}
+
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        {metricCards.map((item) => (
+          <article key={item.label} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="text-xs font-semibold uppercase text-gray-500">{item.label}</p>
+            <p className="mt-2 text-xl font-bold text-gray-900">{item.value}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="rounded-lg border border-gray-200">
+          <div className="grid grid-cols-3 border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase text-gray-500">
+            <div className="px-3 py-2">Actual / Predicted</div>
+            <div className="px-3 py-2 text-center">At Risk</div>
+            <div className="px-3 py-2 text-center">Not At Risk</div>
+          </div>
+          <div className="grid grid-cols-3 border-b border-gray-200 text-sm">
+            <div className="px-3 py-3 font-semibold text-gray-700">At Risk</div>
+            <div className="px-3 py-3 text-center font-bold text-emerald-700">{metrics?.TP ?? metrics?.true_positive ?? 0}</div>
+            <div className="px-3 py-3 text-center font-bold text-red-600">{metrics?.FN ?? metrics?.false_negative ?? 0}</div>
+          </div>
+          <div className="grid grid-cols-3 text-sm">
+            <div className="px-3 py-3 font-semibold text-gray-700">Not At Risk</div>
+            <div className="px-3 py-3 text-center font-bold text-amber-600">{metrics?.FP ?? metrics?.false_positive ?? 0}</div>
+            <div className="px-3 py-3 text-center font-bold text-emerald-700">{metrics?.TN ?? metrics?.true_negative ?? 0}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {confusionValues.map((item) => (
+            <article key={item.label} className="rounded-lg border border-gray-200 bg-white p-3 text-center">
+              <p className="text-xs font-semibold uppercase text-gray-500">{item.label}</p>
+              <p className={`mt-2 text-2xl font-bold ${item.tone}`}>{item.value}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+});
+
 function Analytics() {
   const [stats, setStats] = useState({ total_courses: 0 });
   const [recentActivities, setRecentActivities] = useState([]);
@@ -138,104 +224,197 @@ function Analytics() {
     medium_risk: 0,
     low_risk: 0,
   });
-  const [loading, setLoading] = useState(true);
+  const [modelMetrics, setModelMetrics] = useState({});
   const [error, setError] = useState("");
+  const [loadingState, setLoadingState] = useState({
+    summary: true,
+    predictions: true,
+    atRisk: true,
+    metrics: true,
+    activity: true,
+  });
 
   const [selectedCourse, setSelectedCourse] = useState("all");
   const [predictionPage, setPredictionPage] = useState(1);
 
-  const loadAnalytics = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const normalizeCourseName = useCallback((value) => String(value || "").trim(), []);
 
-    try {
-      const [dashboardData, activityData, riskData, atRiskData, courseData] = await Promise.all([
-        authGet("/api/instructor/dashboard/").catch(() => ({})),
-        authGet("/api/instructor/recent-submissions/").catch(() => []),
-        authGet("/api/ai/student-risk/").catch(() => []),
-        authGet("/api/ai/at-risk-students/").catch(() => []),
-        authGet("/api/ai/course-analytics/").catch(() => ({ courses: [], summary: {} })),
-      ]);
+  const courseOptions = useMemo(() => {
+    const options = [{ value: "all", label: "All Courses", courseId: null, courseName: "all" }];
+    const seenIds = new Set();
+    const seenNames = new Set();
 
-      setStats({ total_courses: dashboardData?.total_courses || 0 });
-      setRecentActivities(Array.isArray(activityData) ? activityData : []);
-      setStudentRiskList(Array.isArray(riskData) ? riskData : []);
-      setAtRiskStudents(Array.isArray(atRiskData) ? atRiskData : []);
-      setCourseAnalytics(Array.isArray(courseData?.courses) ? courseData.courses : []);
-      setAiSummary({
-        total_students: courseData?.summary?.total_students || 0,
-        average_engagement: Number(courseData?.summary?.average_engagement || 0),
-        average_grade: Number(courseData?.summary?.average_grade || 0),
-        high_risk: courseData?.summary?.high_risk || 0,
-        medium_risk: courseData?.summary?.medium_risk || 0,
-        low_risk: courseData?.summary?.low_risk || 0,
+    const pushCourse = (courseId, courseName) => {
+      const normalizedName = normalizeCourseName(courseName);
+      if (!normalizedName) return;
+      if (courseId != null) {
+        if (seenIds.has(String(courseId))) return;
+        seenIds.add(String(courseId));
+        options.push({
+          value: String(courseId),
+          label: normalizedName,
+          courseId: Number(courseId),
+          courseName: normalizedName,
+        });
+        return;
+      }
+      if (seenNames.has(normalizedName)) return;
+      seenNames.add(normalizedName);
+      options.push({
+        value: `name:${normalizedName}`,
+        label: normalizedName,
+        courseId: null,
+        courseName: normalizedName,
       });
-    } catch (requestError) {
-      console.error(requestError);
-      setError("Analytics data could not be loaded.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    };
+
+    courseAnalytics.forEach((item) => pushCourse(item.course_id, item.course_title || item.course_name));
+    studentRiskList.forEach((item) => pushCourse(item.course_id, item.course_title || item.course_name));
+    recentActivities.forEach((item) => pushCourse(null, item.course_title || item.course_name));
+
+    return options;
+  }, [courseAnalytics, normalizeCourseName, recentActivities, studentRiskList]);
+
+  const selectedCourseOption = useMemo(
+    () => courseOptions.find((option) => option.value === selectedCourse) || courseOptions[0],
+    [courseOptions, selectedCourse]
+  );
+
+  const selectedCourseId = selectedCourseOption?.courseId ?? null;
+  const selectedCourseName = normalizeCourseName(selectedCourseOption?.courseName || "");
+
+  const loadAnalytics = useCallback(async () => {
+    setError("");
+    setLoadingState({
+      summary: true,
+      predictions: true,
+      atRisk: true,
+      metrics: true,
+      activity: true,
+    });
+
+    const withParams = (basePath, extraParams = {}) => {
+      const params = new URLSearchParams();
+      if (selectedCourseId) params.set("course_id", String(selectedCourseId));
+      Object.entries(extraParams).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") {
+          params.set(key, String(value));
+        }
+      });
+      const query = params.toString();
+      return query ? `${basePath}?${query}` : basePath;
+    };
+
+    const summaryRequest = Promise.allSettled([
+      authGet(withParams("/api/instructor/dashboard/", { refresh: 0 })),
+      authGet(withParams("/api/ai/course-analytics/", { refresh: 0 })),
+    ]).then(([dashboardResult, courseResult]) => {
+      if (dashboardResult.status === "fulfilled") {
+        setStats({ total_courses: dashboardResult.value?.total_courses || 0 });
+      }
+      if (courseResult.status === "fulfilled") {
+        const courseData = courseResult.value || {};
+        setCourseAnalytics(Array.isArray(courseData?.courses) ? courseData.courses : []);
+        setAiSummary({
+          total_students: courseData?.summary?.total_students || 0,
+          average_engagement: Number(courseData?.summary?.average_engagement || 0),
+          average_grade: Number(courseData?.summary?.average_grade || 0),
+          high_risk: courseData?.summary?.high_risk || 0,
+          medium_risk: courseData?.summary?.medium_risk || 0,
+          low_risk: courseData?.summary?.low_risk || 0,
+        });
+      }
+      if (dashboardResult.status !== "fulfilled" && courseResult.status !== "fulfilled") {
+        setError("Analytics data could not be loaded.");
+      }
+      setLoadingState((current) => ({ ...current, summary: false }));
+    });
+
+    const activityRequest = authGet(withParams("/api/instructor/recent-submissions/", { limit: 20 }))
+      .then((activityData) => {
+        setRecentActivities(Array.isArray(activityData) ? activityData : []);
+      })
+      .catch(() => {
+        setRecentActivities([]);
+      })
+      .finally(() => {
+        setLoadingState((current) => ({ ...current, activity: false }));
+      });
+
+    const predictionRequest = authGet(withParams("/api/ai/student-risk/", { refresh: 0, limit: 60 }))
+      .then((riskData) => {
+        setStudentRiskList(Array.isArray(riskData) ? riskData : []);
+      })
+      .catch(() => {
+        setStudentRiskList([]);
+      })
+      .finally(() => {
+        setLoadingState((current) => ({ ...current, predictions: false }));
+      });
+
+    const atRiskRequest = authGet(withParams("/api/ai/at-risk-students/", { refresh: 0, limit: 10 }))
+      .then((atRiskData) => {
+        setAtRiskStudents(Array.isArray(atRiskData) ? atRiskData : []);
+      })
+      .catch(() => {
+        setAtRiskStudents([]);
+      })
+      .finally(() => {
+        setLoadingState((current) => ({ ...current, atRisk: false }));
+      });
+
+    const metricsRequest = authGet("/api/ai/model-metrics/")
+      .then((metricsData) => {
+        setModelMetrics(metricsData && typeof metricsData === "object" ? metricsData : {});
+      })
+      .catch(() => {
+        setModelMetrics({});
+      })
+      .finally(() => {
+        setLoadingState((current) => ({ ...current, metrics: false }));
+      });
+
+    await Promise.all([summaryRequest, activityRequest, predictionRequest, atRiskRequest, metricsRequest]);
+  }, [selectedCourseId]);
 
   React.useEffect(() => {
     loadAnalytics();
   }, [loadAnalytics]);
 
-  const normalizeCourseName = useCallback((value) => String(value || "").trim(), []);
-
-  const courseOptions = useMemo(() => {
-    const names = new Set();
-
-    courseAnalytics.forEach((item) => {
-      const name = normalizeCourseName(item.course_title || item.course_name);
-      if (name) names.add(name);
-    });
-
-    studentRiskList.forEach((item) => {
-      const name = normalizeCourseName(item.course_title || item.course_name);
-      if (name) names.add(name);
-    });
-
-    recentActivities.forEach((item) => {
-      const name = normalizeCourseName(item.course_title || item.course_name);
-      if (name) names.add(name);
-    });
-
-    return ["all", ...Array.from(names)];
-  }, [courseAnalytics, normalizeCourseName, recentActivities, studentRiskList]);
-
   const filteredRecentActivities = useMemo(() => {
     if (selectedCourse === "all") return recentActivities;
 
     return recentActivities.filter(
-      (item) => normalizeCourseName(item.course_title || item.course_name) === selectedCourse
+      (item) => normalizeCourseName(item.course_title || item.course_name) === selectedCourseName
     );
-  }, [normalizeCourseName, recentActivities, selectedCourse]);
+  }, [normalizeCourseName, recentActivities, selectedCourse, selectedCourseName]);
 
   const filteredCourseAnalytics = useMemo(() => {
     if (selectedCourse === "all") return courseAnalytics;
 
-    return courseAnalytics.filter(
-      (item) => normalizeCourseName(item.course_title || item.course_name) === selectedCourse
-    );
-  }, [courseAnalytics, normalizeCourseName, selectedCourse]);
+    return courseAnalytics.filter((item) => {
+      if (selectedCourseId != null) return Number(item.course_id) === Number(selectedCourseId);
+      return normalizeCourseName(item.course_title || item.course_name) === selectedCourseName;
+    });
+  }, [courseAnalytics, normalizeCourseName, selectedCourse, selectedCourseId, selectedCourseName]);
 
   const filteredStudentRiskList = useMemo(() => {
     if (selectedCourse === "all") return studentRiskList;
 
-    return studentRiskList.filter(
-      (item) => normalizeCourseName(item.course_title || item.course_name) === selectedCourse
-    );
-  }, [normalizeCourseName, selectedCourse, studentRiskList]);
+    return studentRiskList.filter((item) => {
+      if (selectedCourseId != null) return Number(item.course_id) === Number(selectedCourseId);
+      return normalizeCourseName(item.course_title || item.course_name) === selectedCourseName;
+    });
+  }, [normalizeCourseName, selectedCourse, selectedCourseId, selectedCourseName, studentRiskList]);
 
   const filteredAtRiskStudents = useMemo(() => {
     if (selectedCourse === "all") return atRiskStudents;
 
-    return atRiskStudents.filter(
-      (item) => normalizeCourseName(item.course_title || item.course_name) === selectedCourse
-    );
-  }, [atRiskStudents, normalizeCourseName, selectedCourse]);
+    return atRiskStudents.filter((item) => {
+      if (selectedCourseId != null) return Number(item.course_id) === Number(selectedCourseId);
+      return normalizeCourseName(item.course_title || item.course_name) === selectedCourseName;
+    });
+  }, [atRiskStudents, normalizeCourseName, selectedCourse, selectedCourseId, selectedCourseName]);
 
   const enrollmentData = useMemo(() => {
     const grouped = filteredRecentActivities.reduce((acc, row) => {
@@ -295,21 +474,10 @@ function Analytics() {
     () =>
       filteredStudentRiskList.map((row) => {
         const failProbability = Number(
-          row.risk_probability ?? row.probability_student_fails ?? row.risk_score ?? 0
+          row.failure_probability ?? row.risk_probability ?? row.probability_student_fails ?? row.risk_score ?? 0
         );
-        const predictedOutcome =
-          failProbability >= 0.5 ? "At Risk of Failure" : "Likely to Pass";
-        const confidence = Math.max(
-          0,
-          Math.min(
-            100,
-            Math.round(
-              (predictedOutcome === "At Risk of Failure"
-                ? failProbability
-                : 1 - failProbability) * 100
-            )
-          )
-        );
+        const predictedOutcome = row.predicted_outcome || "Likely to Pass";
+        const failureProbability = Math.max(0, Math.min(100, Math.round(failProbability * 100)));
 
         return {
           id: row.id,
@@ -317,7 +485,7 @@ function Analytics() {
           courseName: row.course_title || "Unknown Course",
           predictedOutcome,
           riskLevel: row.risk_level || "low",
-          confidence,
+          failureProbability,
           explanation: row.risk_explanation || "No explanation generated yet.",
         };
       }),
@@ -391,10 +559,6 @@ function Analytics() {
     },
   ];
 
-  if (loading) {
-    return <div className="h-64 animate-pulse rounded-xl bg-emerald-50" />;
-  }
-
   return (
     <div className="space-y-6">
       {error && (
@@ -419,8 +583,8 @@ function Analytics() {
             className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-emerald-500 focus:outline-none"
           >
             {courseOptions.map((course) => (
-              <option key={course} value={course}>
-                {course === "all" ? "All Courses" : course}
+              <option key={course.value} value={course.value}>
+                {course.label}
               </option>
             ))}
           </select>
@@ -428,7 +592,10 @@ function Analytics() {
       </header>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {insightCards.map((card) => {
+        {(loadingState.summary ? [...Array(6)] : insightCards).map((card, index) => {
+          if (loadingState.summary) {
+            return <SectionShell key={index} className="h-32 rounded-xl" />;
+          }
           const Icon = card.icon;
           return (
             <article
@@ -447,6 +614,8 @@ function Analytics() {
         })}
       </section>
 
+      {/* {loadingState.metrics ? <SectionShell className="h-72" /> : <ModelEvaluationPanel metrics={modelMetrics} />} */}
+
       <Suspense
         fallback={
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -458,28 +627,34 @@ function Analytics() {
         }
       >
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <MemoEnrollmentChart data={enrollmentData} />
-          <MemoCompletionChart data={completionData} />
-          <MemoEngagementChart data={engagementData} />
-          <MemoPerformanceChart data={performanceData} />
+          {loadingState.activity ? <ChartShell title="Enrollment Trend" /> : <MemoEnrollmentChart data={enrollmentData} />}
+          {loadingState.summary ? <ChartShell title="Completion Trend" /> : <MemoCompletionChart data={completionData} />}
+          {loadingState.summary ? <ChartShell title="Engagement" /> : <MemoEngagementChart data={engagementData} />}
+          {loadingState.predictions ? <ChartShell title="Performance" /> : <MemoPerformanceChart data={performanceData} />}
         </section>
       </Suspense>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <article className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
           <h3 className="mb-3 text-lg font-semibold text-emerald-900">At-Risk Students</h3>
-          {filteredAtRiskStudents.length === 0 ? (
+          {loadingState.atRisk ? (
+            <div className="space-y-2">
+              {[...Array(4)].map((_, index) => (
+                <SectionShell key={index} className="h-14 rounded-lg" />
+              ))}
+            </div>
+          ) : filteredAtRiskStudents.length === 0 ? (
             <p className="text-sm text-gray-500">No at-risk students currently detected.</p>
           ) : (
             <ul className="space-y-2">
-              {filteredAtRiskStudents.slice(0, 8).map((risk) => (
+              {filteredAtRiskStudents.slice(0, 10).map((risk) => (
                 <li
                   key={risk.id}
                   className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3"
                 >
                   <span className="font-medium text-gray-800">{risk.student_name}</span>
                   <span className="text-sm text-gray-600">
-                    {Math.round(Number(risk.risk_probability || risk.risk_score || 0) * 100)}% {risk.risk_level}
+                    {Math.round(Number(risk.failure_probability || risk.risk_probability || risk.risk_score || 0) * 100)}% {risk.risk_level}
                   </span>
                 </li>
               ))}
@@ -489,7 +664,13 @@ function Analytics() {
 
         <article className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
           <h3 className="mb-3 text-lg font-semibold text-emerald-900">Course Analytics Summary</h3>
-          {filteredCourseAnalytics.length === 0 ? (
+          {loadingState.summary ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, index) => (
+                <SectionShell key={index} className="h-16 rounded-lg" />
+              ))}
+            </div>
+          ) : filteredCourseAnalytics.length === 0 ? (
             <p className="text-sm text-gray-500">No course analytics available yet.</p>
           ) : (
             <ul className="space-y-2">
@@ -508,14 +689,29 @@ function Analytics() {
 
       <section className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
         <h3 className="mb-3 text-lg font-semibold text-emerald-900">
-          Machine Learning Prediction Table
+          AI Prediction Table
         </h3>
-        <PredictionTable
-          rows={pagedPredictionRows}
-          page={predictionPage}
-          totalPages={totalPredictionPages}
-          onPageChange={handlePredictionPageChange}
-        />
+        {loadingState.predictions ? (
+          <div className="space-y-2">
+            {[...Array(6)].map((_, index) => (
+              <SectionShell key={index} className="h-14 rounded-lg" />
+            ))}
+          </div>
+        ) : (
+          <>
+            {predictionRows.length >= 60 && (
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                Showing the first 60 prediction rows for faster initial loading.
+              </p>
+            )}
+            <PredictionTable
+              rows={pagedPredictionRows}
+              page={predictionPage}
+              totalPages={totalPredictionPages}
+              onPageChange={handlePredictionPageChange}
+            />
+          </>
+        )}
       </section>
     </div>
   );

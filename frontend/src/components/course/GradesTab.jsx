@@ -46,6 +46,13 @@ const toNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const sanitizeActivityIds = (activityIds, validIds) => {
+  if (!Array.isArray(activityIds)) return [];
+  return activityIds
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0 && (!validIds || validIds.has(value)));
+};
+
 const extractApiErrorMessage = (payload) => {
   if (!payload) return "";
   if (typeof payload === "string") return payload;
@@ -139,6 +146,11 @@ export default function GradesTab({ courseId, isInstructor }) {
       );
       const components = Array.isArray(data?.components) ? data.components : [];
       const suggested = Array.isArray(data?.suggested_components) ? data.suggested_components : [];
+      const validActivityIds = new Set(
+        (Array.isArray(data?.detected_activities) ? data.detected_activities : [])
+          .map((item) => Number(item?.id))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      );
       setScheme({
         grading_type: data?.grading_type || "zero_based",
         passing_grade: Number(data?.passing_grade ?? 75),
@@ -156,6 +168,7 @@ export default function GradesTab({ courseId, isInstructor }) {
             ...item,
             category_key: item.category_key || rule.category_key || "",
             drop_lowest_count: rule.drop_lowest_count ?? item.drop_lowest_count ?? 0,
+            activity_ids: sanitizeActivityIds(item.activity_ids, validActivityIds),
           });
         }),
       });
@@ -235,14 +248,15 @@ export default function GradesTab({ courseId, isInstructor }) {
     setError("");
     setStatus("");
     try {
+      const validActivityIds = new Set(
+        (Array.isArray(schemeMeta.detected_activities) ? schemeMeta.detected_activities : [])
+          .map((item) => Number(item?.id))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      );
       const componentsPayload = scheme.components.map((item) => ({
         name: String(item.name || "").trim(),
         weight: toNumber(item.weight),
-        activity_ids: Array.isArray(item.activity_ids)
-          ? item.activity_ids
-              .map((value) => Number(value))
-              .filter((value) => Number.isInteger(value) && value > 0)
-          : [],
+        activity_ids: sanitizeActivityIds(item.activity_ids, validActivityIds),
       }));
       const customConfigPayload =
         scheme.custom_config && typeof scheme.custom_config === "object" ? { ...scheme.custom_config } : {};

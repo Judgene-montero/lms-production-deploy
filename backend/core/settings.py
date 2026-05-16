@@ -10,15 +10,20 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from pathlib import Path
 import hashlib
 import os
 import warnings
+from pathlib import Path
 
 try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover
     load_dotenv = None
+
+try:
+    import dj_database_url
+except ImportError:  # pragma: no cover
+    dj_database_url = None
 
 try:
     from sklearn.exceptions import InconsistentVersionWarning
@@ -35,13 +40,34 @@ if load_dotenv is not None:
     load_dotenv(BASE_DIR / ".env")
 
 
+def _get_env(*names: str, default: str | None = None) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None:
+            return value
+    return default
+
+
+def _get_bool_env(*names: str, default: bool = False) -> bool:
+    value = _get_env(*names)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_list_env(*names: str, default: str = "") -> list[str]:
+    value = _get_env(*names, default=default) or ""
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv(
+SECRET_KEY = _get_env(
+    "SECRET_KEY",
     "DJANGO_SECRET_KEY",
-    "unsafe-dev-key-change-me-please-set-django-secret-key",
+    default="unsafe-dev-key-change-me-please-set-django-secret-key",
 )
 
 
@@ -61,9 +87,13 @@ def _resolve_jwt_signing_key() -> str:
 JWT_SIGNING_KEY = _resolve_jwt_signing_key()
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DJANGO_DEBUG", "false").strip().lower() == "true"
+DEBUG = _get_bool_env("DEBUG", "DJANGO_DEBUG", default=True)
 
-ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()]
+ALLOWED_HOSTS = _get_list_env(
+    "ALLOWED_HOSTS",
+    "DJANGO_ALLOWED_HOSTS",
+    default="localhost,127.0.0.1",
+)
 
 
 # Application definition
@@ -77,6 +107,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Third-party apps
+    'channels',
     'rest_framework',
     'corsheaders',
     "django_extensions",
@@ -111,6 +142,7 @@ SIMPLE_JWT = {
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -137,21 +169,33 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'core.wsgi.application'
+ASGI_APPLICATION = 'core.asgi.application'
 
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': os.getenv('POSTGRES_ENGINE', 'django.db.backends.postgresql'),
-        'NAME': os.getenv('POSTGRES_DB', 'enhance_lms'),
-        'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
+DATABASE_URL = _get_env("DATABASE_URL")
+
+if DATABASE_URL and dj_database_url is not None:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=not DEBUG,
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': os.getenv('POSTGRES_ENGINE', 'django.db.backends.postgresql'),
+            'NAME': os.getenv('POSTGRES_DB', 'enhance_lms'),
+            'USER': os.getenv('POSTGRES_USER', 'postgres'),
+            'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
+            'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
+            'PORT': os.getenv('POSTGRES_PORT', '5432'),
+        }
+    }
 
 
 MEDIA_URL = "/media/"
@@ -191,7 +235,11 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+if not DEBUG:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -199,10 +247,55 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-    if origin.strip()
-]
+CORS_ALLOWED_ORIGINS = _get_list_env(
+    "CORS_ALLOWED_ORIGINS",
+    "DJANGO_CORS_ALLOWED_ORIGINS",
+    default="http://localhost:3000,http://127.0.0.1:3000",
+)
 
 CORS_ALLOW_ALL_ORIGINS = False
+
+CSRF_TRUSTED_ORIGINS = _get_list_env(
+    "CSRF_TRUSTED_ORIGINS",
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    default="http://localhost:3000,http://127.0.0.1:3000",
+)
+
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = _get_bool_env("SECURE_SSL_REDIRECT", default=True)
+    SESSION_COOKIE_SECURE = _get_bool_env("SESSION_COOKIE_SECURE", default=True)
+    CSRF_COOKIE_SECURE = _get_bool_env("CSRF_COOKIE_SECURE", default=True)
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = "DENY"
+    SECURE_REFERRER_POLICY = "same-origin"
+
+
+CHANNEL_LAYER_BACKEND = os.getenv("DJANGO_CHANNEL_LAYER_BACKEND", "memory").strip().lower()
+if CHANNEL_LAYER_BACKEND == "redis":
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [os.getenv("DJANGO_CHANNEL_REDIS_URL", "redis://127.0.0.1:6379/0")],
+            },
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
+
+
+EMAIL_BACKEND = os.getenv("DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+DEFAULT_FROM_EMAIL = os.getenv("DJANGO_DEFAULT_FROM_EMAIL", "no-reply@enhancelms.local")
+
+
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "memory://")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "cache+memory://")
+CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "true" if DEBUG else "false").strip().lower() == "true"
+CELERY_TASK_EAGER_PROPAGATES = os.getenv("CELERY_TASK_EAGER_PROPAGATES", "true" if DEBUG else "false").strip().lower() == "true"

@@ -12,7 +12,7 @@ import {
 } from "react-icons/lu";
 import { authGet } from "../../utils/api";
 import StudentProgressCard from "../../components/student/StudentProgressCard";
-import useStudentNotifications from "../../hooks/useStudentNotifications";
+import useNotifications from "../../hooks/useNotifications";
 import { getActivityStatus, normalizeType } from "../../utils/studentMetrics";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -47,7 +47,7 @@ const shellCardClass =
 export default function StudentHome() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const { notifications, loading: notificationsLoading, markAsRead } = useStudentNotifications();
+  const { notifications, loading: notificationsLoading, markAsRead } = useNotifications();
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [stats, setStats] = useState({
@@ -476,9 +476,14 @@ export default function StudentHome() {
             {notifications.slice(0, 6).map((item) => (
               <article
                 key={item.id}
-                onClick={() => markAsRead(item.id)}
+                onClick={() => {
+                  markAsRead(item.id);
+                  if (item.target?.pathname) {
+                    navigate(item.target.pathname, { state: item.target.state });
+                  }
+                }}
                 className={`rounded-xl border p-4 shadow-sm transition ${
-                  item.read ? "border-slate-100 bg-white" : "border-emerald-100 bg-emerald-50/40"
+                  item.isRead ? "border-slate-100 bg-white" : "border-emerald-100 bg-emerald-50/40"
                 }`}
               >
                 <p className="text-sm font-semibold text-slate-900">{item.title}</p>

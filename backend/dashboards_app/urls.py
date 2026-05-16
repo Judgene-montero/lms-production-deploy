@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    AdminDashboardOverviewAPIView,
     InstructorSidebarAPIView,
     InstructorCoursesAPIView,
     InstructorCourseCreateAPIView,
@@ -33,4 +34,5 @@ urlpatterns = [
     # Other routes
     path("dashboards/instructor/submissions/", InstructorSubmissionsAPIView.as_view()),
     path("dashboards/instructor/notifications/", InstructorNotificationsAPIView.as_view()),
+    path("admin/dashboard/overview/", AdminDashboardOverviewAPIView.as_view()),
 ]

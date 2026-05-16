@@ -1,7 +1,7 @@
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from courses.models import ActivitySubmission
@@ -10,6 +10,8 @@ from users_app.models import Course
 from analytics_ai.models import CourseAnalytics, StudentAnalytics
 from analytics_ai.serializers import CourseAnalyticsSerializer, StudentAnalyticsSerializer
 from analytics_ai.services import refresh_instructor_analytics
+from analytics_ai.services.model_metrics import get_at_risk_model_metrics
+from analytics_ai.services.risk_engine import evaluate_at_risk, get_risk_settings
 
 
 def _student_placeholder_payload():
@@ -32,6 +34,12 @@ def _require_trainer_role(request):
     return None
 
 
+def _require_analytics_role(request):
+    if getattr(request.user, "role", "") not in {"instructor", "admin"}:
+        return Response({"error": "Only instructors or admins can access analytics metrics."}, status=403)
+    return None
+
+
 def _parse_course_id(request):
     course_id = request.query_params.get("course_id")
     if not course_id:
@@ -40,6 +48,21 @@ def _parse_course_id(request):
         return int(course_id)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_positive_int(request, key, default=None, maximum=None):
+    raw_value = request.query_params.get(key)
+    if raw_value in (None, ""):
+        return default
+    try:
+        parsed = int(raw_value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < 0:
+        return default
+    if maximum is not None:
+        return min(parsed, maximum)
+    return parsed
 
 
 def _should_refresh(request):
@@ -91,13 +114,14 @@ def recent_submissions(request):
     if forbidden:
         return forbidden
 
+    limit = _parse_positive_int(request, "limit", default=10, maximum=50)
     submissions = (
         ActivitySubmission.objects.filter(
             activity__course__instructor=request.user,
             status__in=["submitted", "graded"],
         )
         .select_related("student", "activity__course")
-        .order_by("-submitted_at")[:10]
+        .order_by("-submitted_at")[:limit]
     )
 
     data = [
@@ -126,6 +150,8 @@ def student_risk(request):
         return forbidden
 
     course_id = _parse_course_id(request)
+    limit = _parse_positive_int(request, "limit", default=None, maximum=500)
+    offset = _parse_positive_int(request, "offset", default=0, maximum=5000) or 0
     if _should_refresh(request):
         refresh_instructor_analytics(request.user, course_id=course_id)
 
@@ -133,8 +159,11 @@ def student_risk(request):
     if course_id:
         queryset = queryset.filter(course_id=course_id)
     queryset = queryset.order_by("-risk_score", "student__last_name")
+    if limit is not None:
+        queryset = queryset[offset:offset + limit]
 
-    serializer = StudentAnalyticsSerializer(queryset, many=True)
+    risk_settings = get_risk_settings()
+    serializer = StudentAnalyticsSerializer(queryset, many=True, context={"risk_settings": risk_settings})
     return Response(serializer.data)
 
 
@@ -176,6 +205,7 @@ def course_analytics(request):
         return forbidden
 
     course_id = _parse_course_id(request)
+    limit = _parse_positive_int(request, "limit", default=None, maximum=100)
     if _should_refresh(request):
         refresh_instructor_analytics(request.user, course_id=course_id)
 
@@ -183,6 +213,8 @@ def course_analytics(request):
     if course_id:
         queryset = queryset.filter(course_id=course_id)
     queryset = queryset.order_by("course__title")
+    if limit is not None:
+        queryset = queryset[:limit]
 
     serializer = CourseAnalyticsSerializer(queryset, many=True)
     overall = StudentAnalytics.objects.filter(course__instructor=request.user)
@@ -220,19 +252,48 @@ def at_risk_students(request):
         return forbidden
 
     course_id = _parse_course_id(request)
+    limit = _parse_positive_int(request, "limit", default=None, maximum=100)
     if _should_refresh(request):
         refresh_instructor_analytics(request.user, course_id=course_id)
 
-    queryset = StudentAnalytics.objects.filter(
-        course__instructor=request.user,
-        risk_level__in=["high", "medium"],
-    ).select_related("student", "course")
+    queryset = StudentAnalytics.objects.filter(course__instructor=request.user).select_related("student", "course")
     if course_id:
         queryset = queryset.filter(course_id=course_id)
     queryset = queryset.order_by("-risk_score", "student__last_name")
+    risk_settings = get_risk_settings()
+    at_risk_rows = []
+    for row in queryset.iterator():
+        if evaluate_at_risk(
+            {
+                "average_grade": row.average_grade,
+                "late_rate": row.late_rate,
+                "missing_rate": row.missing_rate,
+                "engagement_score": row.engagement_score,
+                "grade_trend": row.grade_trend,
+                "total_submissions": row.total_submissions,
+            },
+            row.probability_student_fails if row.probability_student_fails is not None else row.risk_score,
+            risk_settings,
+        ):
+            at_risk_rows.append(row)
+            if limit is not None and len(at_risk_rows) >= limit:
+                break
 
-    serializer = StudentAnalyticsSerializer(queryset, many=True)
+    serializer = StudentAnalyticsSerializer(at_risk_rows, many=True, context={"risk_settings": risk_settings})
     return Response(serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def model_metrics(request):
+    forbidden = _require_analytics_role(request)
+    if forbidden:
+        return forbidden
+
+    course_id = _parse_course_id(request)
+    instructor = request.user if getattr(request.user, "role", "") == "instructor" else None
+    metrics = get_at_risk_model_metrics(instructor=instructor, course_id=course_id)
+    return Response(metrics)
 
 
 @api_view(["POST"])
@@ -271,7 +332,9 @@ def get_ai_progress_data():
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsAdminUser])
+@permission_classes([IsAuthenticated])
 def admin_progress(request):
+    if getattr(request.user, "role", "") != "admin" and not getattr(request.user, "is_staff", False):
+        return Response({"error": "Unauthorized"}, status=403)
     data = get_ai_progress_data()
     return Response({"status": "ok", "data": data}, status=200)

@@ -2,11 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import axios from "../utils/axiosInstance";
 import { RefreshCw, UserCheck } from "lucide-react";
 
-const API_USERS = "http://127.0.0.1:8000/api/users";
-const getAuthHeaders = () => ({
-  headers: { Authorization: `Bearer ${localStorage.getItem("access")}` },
-});
-
 export default function AdminInstructorApprovals() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,7 +11,7 @@ export default function AdminInstructorApprovals() {
     setLoading(true);
     setNotice("");
     try {
-      const allUsersRes = await axios.get(`${API_USERS}/admin/users/`, getAuthHeaders());
+      const allUsersRes = await axios.get("/api/users/admin/users/");
       const allUsers = Array.isArray(allUsersRes.data) ? allUsersRes.data : [];
       const pending = allUsers.filter(
         (u) =>
@@ -28,7 +23,7 @@ export default function AdminInstructorApprovals() {
     } catch (err) {
       // Fallback for compatibility if /admin/users/ is unavailable.
       try {
-        const res = await axios.get(`${API_USERS}/admin/pending-instructors/`, getAuthHeaders());
+        const res = await axios.get("/api/users/admin/pending-instructors/");
         setRows(Array.isArray(res.data) ? res.data : []);
       } catch (fallbackErr) {
         setRows([]);
@@ -49,7 +44,7 @@ export default function AdminInstructorApprovals() {
 
   const approve = async (id) => {
     try {
-      await axios.post(`${API_USERS}/admin/instructor-approve/${id}/`, {}, getAuthHeaders());
+      await axios.post(`/api/users/admin/instructor-approve/${id}/`, {});
       setNotice("Instructor approved.");
       fetchPending();
     } catch (err) {
@@ -121,4 +116,3 @@ export default function AdminInstructorApprovals() {
     </div>
   );
 }
-

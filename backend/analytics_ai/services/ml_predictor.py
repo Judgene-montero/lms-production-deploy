@@ -6,6 +6,8 @@ try:
 except ImportError:  # pragma: no cover
     joblib = None
 import pandas as pd
+from analytics_ai.services.risk_engine import classify_risk, get_risk_settings
+
 try:
     from sklearn.exceptions import InconsistentVersionWarning
 except Exception:  # pragma: no cover
@@ -23,12 +25,8 @@ MODEL_FEATURE_COLUMNS = [
 
 
 def _probability_to_level(risk_probability):
-    value = float(risk_probability)
-    if value >= 0.6:
-        return "high", "HIGH"
-    if value >= 0.3:
-        return "medium", "MEDIUM"
-    return "low", "LOW"
+    risk_level = classify_risk(float(risk_probability), get_risk_settings())
+    return risk_level, risk_level.upper()
 
 
 class TrainedModelPredictor:

@@ -42,24 +42,26 @@ function StudentRiskTab({ isActive, selectedCourse, students }) {
           student_id: student.id,
           student_name: student.name,
           risk_level: student.riskLevel,
-          confidence: student.riskLevel === "high" ? 0.87 : student.riskLevel === "medium" ? 0.68 : 0.42,
+          failure_probability: student.riskLevel === "high" ? 0.87 : student.riskLevel === "medium" ? 0.68 : 0.42,
           engagement_score: student.progress,
           missing_rate: Math.min(1, Number(student.assignmentsMissed || 0) / 10),
           late_rate: Math.min(1, Number(student.lateSubmissions || 0) / 10),
-          explanation: student.assignmentsMissed > 3 ? "Low assignment completion" : "Stable performance",
-          recommended_action: student.assignmentsMissed > 3 ? "Send reminder and monitor next submission" : "Maintain regular follow-up",
+          risk_explanation: student.assignmentsMissed > 3 ? "Low assignment completion" : "Stable performance",
+          intervention_suggestions: student.assignmentsMissed > 3 ? ["Send assignment reminder for missing submissions."] : ["Continue regular monitoring."],
         }));
 
         const normalized = (apiRows.length ? apiRows : fallbackRows).map((item) => ({
           id: item.student_id || item.id,
           student: item.student_name || item.name || "Unknown Student",
           riskLevel: String(item.risk_level || "low").toLowerCase(),
-          confidence: Number(item.confidence ?? item.confidence_score ?? 0),
+          failureProbability: Math.round(Number(item.failure_probability ?? item.risk_probability ?? item.risk_score ?? 0) * 100),
           engagementScore: Math.round(Number(item.engagement_score ?? 0)),
           missingRate: Math.round(Number(item.missing_rate ?? 0) * 100),
           lateRate: Math.round(Number(item.late_rate ?? 0) * 100),
-          explanation: item.explanation || "No additional explanation.",
-          recommendedAction: item.recommended_action || "Review student activity.",
+          explanation: item.risk_explanation || item.explanation || "No additional explanation.",
+          recommendedAction: Array.isArray(item.intervention_suggestions)
+            ? item.intervention_suggestions.join(" ")
+            : item.recommended_action || "Review student activity.",
         }));
 
         if (mounted) setRows(normalized);
@@ -104,7 +106,7 @@ function StudentRiskTab({ isActive, selectedCourse, students }) {
                   <tr>
                     <th className="px-3 py-2 text-left">Student</th>
                     <th className="px-3 py-2 text-left">Risk Level</th>
-                    <th className="px-3 py-2 text-left">Confidence Score</th>
+                    <th className="px-3 py-2 text-left">Failure Probability</th>
                     <th className="px-3 py-2 text-left">Engagement Score</th>
                     <th className="px-3 py-2 text-left">Missing Rate</th>
                     <th className="px-3 py-2 text-left">Late Rate</th>
@@ -117,7 +119,7 @@ function StudentRiskTab({ isActive, selectedCourse, students }) {
                     <tr key={row.id} className="border-t border-gray-200">
                       <td className="px-3 py-2 text-gray-800">{row.student}</td>
                       <td className="px-3 py-2"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${riskBadgeClass(row.riskLevel)}`}>{row.riskLevel.toUpperCase()}</span></td>
-                      <td className="px-3 py-2">{row.confidence.toFixed(2)}</td>
+                      <td className="px-3 py-2">{row.failureProbability}%</td>
                       <td className="px-3 py-2">{row.engagementScore}</td>
                       <td className="px-3 py-2">{row.missingRate}%</td>
                       <td className="px-3 py-2">{row.lateRate}%</td>

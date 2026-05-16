@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   LuBookOpen,
   LuCalendarCheck2,
@@ -12,8 +12,10 @@ import {
   LuMessageSquareText,
   LuSparkles,
   LuUsers,
+  LuVideo,
 } from "react-icons/lu";
 import { authDelete, authGet, authPost } from "../../utils/api";
+import MeetingsTab from "../../components/course/MeetingsTab";
 import StudentClassworkModal from "./StudentClassworkModal";
 import StudentInsightsPanel from "../../components/student/StudentInsightsPanel";
 import CourseProgressBar from "../../components/student/CourseProgressBar";
@@ -35,6 +37,7 @@ const TAB_ITEMS = [
   { key: "lessons", label: "Lessons", icon: LuBookOpen, accent: "from-emerald-600 to-lime-600" },
   { key: "classwork", label: "Classwork", icon: LuClipboardCheck, accent: "from-emerald-700 to-green-600" },
   { key: "exams_quizzes", label: "Exams & Quizzes", icon: LuGalleryVerticalEnd, accent: "from-emerald-700 to-cyan-600" },
+  { key: "meetings", label: "Meetings", icon: LuVideo, accent: "from-emerald-700 to-teal-500" },
   { key: "attendance", label: "Attendance", icon: LuCalendarCheck2, accent: "from-emerald-700 to-sky-600" },
   { key: "grades", label: "Grades", icon: LuFileSpreadsheet, accent: "from-emerald-700 to-teal-700" },
   { key: "people", label: "People", icon: LuUsers, accent: "from-emerald-700 to-green-700" },
@@ -980,6 +983,10 @@ export default function StudentCourseDetails() {
       );
     }
 
+    if (activeTab === "meetings") {
+      return <MeetingsTab courseId={courseId} isInstructor={false} />;
+    }
+
     if (activeTab === "attendance") {
       const statusCount = attendanceSessions.reduce(
         (acc, session) => {
@@ -1252,6 +1259,12 @@ export default function StudentCourseDetails() {
                 <p className="inline-flex rounded-full border border-emerald-100 bg-emerald-50/80 px-3 py-1.5 text-sm text-emerald-800 shadow-sm">
                   Progress: <span className="ml-1 font-semibold">{courseProgress.toFixed(0)}%</span>
                 </p>
+                <Link
+                  to={`/courses/${courseId}/meetings`}
+                  className="inline-flex rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-sm font-medium text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
+                >
+                  Meetings
+                </Link>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:min-w-[240px]">
@@ -1308,6 +1321,8 @@ export default function StudentCourseDetails() {
                       ? "Tasks"
                       : tab.key === "exams_quizzes"
                       ? "Assessments"
+                      : tab.key === "meetings"
+                      ? "Sessions"
                       : tab.key === "attendance"
                       ? "Sessions"
                       : tab.key === "grades"

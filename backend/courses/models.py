@@ -603,6 +603,47 @@ class AttendanceRecord(models.Model):
         return f"{self.session_id} - {self.student_id} - {self.status}"
 
 
+class Meeting(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="meetings")
+    title = models.CharField(max_length=255)
+    scheduled_time = models.DateTimeField()
+    meeting_link = models.URLField()
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_meetings",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["scheduled_time", "id"]
+
+    def __str__(self):
+        return f"{self.course.title} - {self.title}"
+
+
+class MeetingAttendance(models.Model):
+    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name="attendances")
+    student = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="meeting_attendances",
+        limit_choices_to={"role": "student"},
+    )
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-joined_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["meeting", "student"], name="unique_meeting_attendance_per_student"),
+        ]
+
+    def __str__(self):
+        return f"MeetingAttendance(meeting={self.meeting_id}, student={self.student_id})"
+
+
 class GradingComponentScore(models.Model):
     component = models.ForeignKey(GradingComponent, on_delete=models.CASCADE, related_name="student_scores")
     student = models.ForeignKey(User, on_delete=models.CASCADE, limit_choices_to={"role": "student"})
@@ -615,3 +656,46 @@ class GradingComponentScore(models.Model):
 
     def __str__(self):
         return f"ComponentScore(component={self.component_id}, student={self.student_id}, score={self.raw_score})"
+
+
+class EnrollmentRequest(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+    ]
+
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="enrollment_requests")
+    student = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="enrollment_requests",
+        limit_choices_to={"role": "student"},
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_enrollment_requests",
+    )
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["course", "student"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_enrollment_request_per_course_student",
+            ),
+        ]
+
+    def __str__(self):
+        return f"EnrollmentRequest(course={self.course_id}, student={self.student_id}, status={self.status})"

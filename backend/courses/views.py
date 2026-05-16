@@ -1,7 +1,7 @@
 from rest_framework.decorators import action, api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework import viewsets
@@ -22,7 +22,7 @@ import logging
 import unicodedata
 from collections import OrderedDict, defaultdict
 from datetime import timedelta, datetime
-from .serializers import ActivityCommentSerializer, CourseSerializer
+from .serializers import ActivityCommentSerializer, CategorySerializer, CourseSerializer
 
 from .models import (
     ActivityType,
@@ -46,6 +46,7 @@ from .models import (
     QuestionBankItem,
     QuizSecurityEvent,
     QuizAttemptAcknowledgement,
+    EnrollmentRequest,
 )
 from .serializers import (
     CourseSerializer,
@@ -63,11 +64,15 @@ from .serializers import (
     ClassworkDraftSerializer,
     QuestionBankItemSerializer,
     QuizSecurityEventSerializer,
+    MeetingSerializer,
+    EnrollmentRequestSerializer,
 )
 from .services.grading import ACTIVITY_CATEGORY_LABELS, _slugify_identifier, compute_grade_details_for_students
 from .services.lesson_extraction import extract_lesson_content
+from .services.meetings import create_meeting, join_meeting, list_course_meetings
 from .services.module_extraction import extract_module_structure
-from users_app.models import Course, User
+from users_app.models import AdminLog, Category, Course, User
+from users_app.events.registry import dispatch_event
 
 try:
     import docx  # python-docx
@@ -117,7 +122,25 @@ def _build_lesson_serializer_context(request, lessons_queryset=None):
 
 class IsInstructorRole(BasePermission):
     def has_permission(self, request, view):
-        return bool(getattr(request, "user", None) and request.user.is_authenticated and getattr(request.user, "role", "") == "instructor")
+        return bool(
+            getattr(request, "user", None)
+            and request.user.is_authenticated
+            and getattr(request.user, "role", "") in {"instructor", "admin"}
+        )
+
+
+class IsAdminRole(BasePermission):
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        return bool(
+            user
+            and user.is_authenticated
+            and (
+                getattr(user, "role", "") == "admin"
+                or getattr(user, "is_staff", False)
+                or getattr(user, "is_superuser", False)
+            )
+        )
 
 
 class IsStudentRole(BasePermission):
@@ -169,7 +192,59 @@ def _as_bool(value, default=False):
     return bool(value)
 
 
+def _is_admin_user(user):
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and (
+            getattr(user, "role", "") == "admin"
+            or getattr(user, "is_staff", False)
+            or getattr(user, "is_superuser", False)
+        )
+    )
+
+
+def _is_instructor_user(user):
+    return bool(user and getattr(user, "is_authenticated", False) and getattr(user, "role", "") == "instructor")
+
+
+def _can_manage_course(user, course):
+    return bool(course and (_is_admin_user(user) or getattr(course, "instructor_id", None) == getattr(user, "id", None)))
+
+
+def _can_view_course(user, course):
+    if _can_manage_course(user, course):
+        return True
+    return bool(
+        course
+        and getattr(user, "role", "") == "student"
+        and course.students.filter(id=getattr(user, "id", None)).exists()
+    )
+
+
+def _pending_enrollment_requests_for_user(user):
+    queryset = EnrollmentRequest.objects.select_related("course", "student", "reviewed_by").filter(
+        status=EnrollmentRequest.STATUS_PENDING
+    )
+    if _is_admin_user(user):
+        return queryset
+    return queryset.filter(course__instructor=user)
+
+
+def _log_admin_action(action, performed_by=None, target_user=None, description=""):
+    try:
+        AdminLog.objects.create(
+            action=action,
+            performed_by=performed_by if getattr(performed_by, "is_authenticated", False) else None,
+            target_user=target_user,
+            description=description or "",
+        )
+    except Exception:
+        logger.warning("Failed to persist admin course action log.", exc_info=True)
+
+
 INSTRUCTOR_ROLE_PERMISSION = IsInstructorRole()
+ADMIN_ROLE_PERMISSION = IsAdminRole()
 STUDENT_ROLE_PERMISSION = IsStudentRole()
 COURSE_OWNER_PERMISSION = IsCourseOwner()
 COURSE_ENROLLED_PERMISSION = IsCourseEnrolled()
@@ -188,15 +263,213 @@ def _anti_cheat_runtime_config(activity):
 
 
 # -----------------------------
+# Category Management
+# -----------------------------
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def category_list_create(request):
+    if request.method == "GET":
+        categories = Category.objects.order_by("name")
+        serializer = CategorySerializer(categories, many=True)
+        return Response(serializer.data)
+
+    if not _allow(ADMIN_ROLE_PERMISSION, request.user):
+        return Response({"error": "Only admin can manage categories."}, status=403)
+
+    serializer = CategorySerializer(data=request.data)
+    if serializer.is_valid():
+        category = serializer.save()
+        _log_admin_action(
+            "Category created",
+            performed_by=request.user,
+            description=f"Created category '{category.name}'.",
+        )
+        return Response(serializer.data, status=201)
+    return Response(serializer.errors, status=400)
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def category_detail(request, category_id):
+    category = get_object_or_404(Category, id=category_id)
+
+    if request.method == "GET":
+        return Response(CategorySerializer(category).data)
+
+    if not _allow(ADMIN_ROLE_PERMISSION, request.user):
+        return Response({"error": "Only admin can manage categories."}, status=403)
+
+    if request.method in {"PUT", "PATCH"}:
+        serializer = CategorySerializer(
+            category,
+            data=request.data,
+            partial=request.method == "PATCH",
+        )
+        if serializer.is_valid():
+            serializer.save()
+            _log_admin_action(
+                "Category updated",
+                performed_by=request.user,
+                description=f"Updated category '{category.name}'.",
+            )
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+    if category.courses.exists():
+        return Response({"error": "Cannot delete a category that is assigned to courses."}, status=400)
+
+    deleted_name = category.name
+    category.delete()
+    _log_admin_action(
+        "Category deleted",
+        performed_by=request.user,
+        description=f"Deleted category '{deleted_name}'.",
+    )
+    return Response(status=204)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def admin_course_management(request):
+    if not _is_admin_user(request.user):
+        return Response({"error": "Only admin can manage all courses."}, status=403)
+
+    if request.method == "GET":
+        courses = (
+            Course.objects.select_related("instructor", "category")
+            .annotate(students_count=Count("students", distinct=True), lessons_count=Count("lessons", distinct=True))
+            .order_by("-id")
+        )
+        serializer = CourseSerializer(courses, many=True, context={"request": request})
+        payload = []
+        for item, course in zip(serializer.data, courses):
+            item["instructor_name"] = (
+                f"{course.instructor.first_name} {course.instructor.last_name}".strip() or course.instructor.username
+            )
+            item["instructor_id"] = course.instructor_id
+            payload.append(item)
+        return Response(payload)
+
+    instructor_id = request.data.get("instructor_id")
+    instructor = User.objects.filter(id=instructor_id, role="instructor").first()
+    if not instructor:
+        return Response({"error": "A valid instructor_id is required."}, status=400)
+
+    serializer = CourseSerializer(data=request.data, context={"request": request})
+    serializer.is_valid(raise_exception=True)
+    course = serializer.save(instructor=instructor)
+    _log_admin_action(
+        "Course created",
+        performed_by=request.user,
+        target_user=instructor,
+        description=f"Created course '{course.title}' and assigned it to {instructor.username}.",
+    )
+    data = CourseSerializer(course, context={"request": request}).data
+    data["instructor_name"] = f"{instructor.first_name} {instructor.last_name}".strip() or instructor.username
+    data["instructor_id"] = instructor.id
+    return Response(data, status=201)
+
+
+@api_view(["GET", "PATCH", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def admin_course_detail(request, course_id):
+    if not _is_admin_user(request.user):
+        return Response({"error": "Only admin can manage all courses."}, status=403)
+
+    course = get_object_or_404(Course.objects.select_related("instructor", "category"), id=course_id)
+
+    if request.method == "GET":
+        data = CourseSerializer(course, context={"request": request}).data
+        data["instructor_name"] = f"{course.instructor.first_name} {course.instructor.last_name}".strip() or course.instructor.username
+        data["instructor_id"] = course.instructor_id
+        return Response(data)
+
+    if request.method in {"PATCH", "PUT"}:
+        next_instructor_id = request.data.get("instructor_id")
+        if next_instructor_id not in (None, ""):
+            next_instructor = User.objects.filter(id=next_instructor_id, role="instructor").first()
+            if not next_instructor:
+                return Response({"error": "Assigned instructor must have instructor role."}, status=400)
+        else:
+            next_instructor = course.instructor
+
+        serializer = CourseSerializer(
+            course,
+            data=request.data,
+            partial=request.method == "PATCH",
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        updated_course = serializer.save(instructor=next_instructor)
+        if "archived" in request.data:
+            updated_course.is_archived = _as_bool(request.data.get("archived"))
+            updated_course.save(update_fields=["is_archived"])
+        _log_admin_action(
+            "Course updated",
+            performed_by=request.user,
+            target_user=next_instructor,
+            description=f"Updated course '{updated_course.title}'.",
+        )
+        data = CourseSerializer(updated_course, context={"request": request}).data
+        data["instructor_name"] = f"{next_instructor.first_name} {next_instructor.last_name}".strip() or next_instructor.username
+        data["instructor_id"] = next_instructor.id
+        return Response(data)
+
+    course_title = course.title
+    instructor = course.instructor
+    course.delete()
+    _log_admin_action(
+        "Course deleted",
+        performed_by=request.user,
+        target_user=instructor,
+        description=f"Deleted course '{course_title}'.",
+    )
+    return Response({"message": "Course deleted successfully."}, status=200)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def admin_content_delete(request, content_type, object_id):
+    if not _is_admin_user(request.user):
+        return Response({"error": "Only admin can remove content."}, status=403)
+
+    content_map = {
+        "course-comment": (CourseComment, "Course comment"),
+        "activity-comment": (ActivityComment, "Activity comment"),
+        "lesson": (Lesson, "Lesson"),
+        "activity": (CourseActivity, "Activity"),
+    }
+    config = content_map.get(content_type)
+    if not config:
+        return Response({"error": "Unsupported content type."}, status=400)
+
+    model, label = config
+    obj = get_object_or_404(model, id=object_id)
+    course = getattr(obj, "course", None) or getattr(getattr(obj, "activity", None), "course", None)
+    course_title = getattr(course, "title", "")
+    description = f"Removed {label.lower()} #{object_id}"
+    if course_title:
+        description = f"{description} from course '{course_title}'."
+    obj.delete()
+    _log_admin_action("Content removed", performed_by=request.user, description=description)
+    return Response({"message": f"{label} deleted successfully."}, status=200)
+
+
+# -----------------------------
 # Instructor Courses (GET + POST)
 # -----------------------------
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
 def instructor_courses_list(request):
     instructor = request.user
+    if not getattr(instructor, "is_authenticated", False) or getattr(instructor, "role", "") != "instructor":
+        return Response({"error": "Only instructors can manage their own course workspace."}, status=403)
 
     if request.method == "GET":
-        courses = Course.objects.filter(instructor=instructor).annotate(
+        courses = Course.objects.filter(instructor=instructor).select_related("category").annotate(
             students_count=Count("students", distinct=True),
             lessons_count=Count("lessons", distinct=True),
         )
@@ -233,11 +506,11 @@ def lessons_list(request, course_id):
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def add_lesson(request, course_id):
-    if request.user.role != "instructor":
+    if not _is_instructor_user(request.user):
         return Response({"error": "Only instructor can create lessons"}, status=403)
 
     course = get_object_or_404(Course, id=course_id)
-    if course.instructor_id != request.user.id:
+    if not _can_manage_course(request.user, course):
         return Response({"error": "Course not found or access denied"}, status=404)
 
     upload = request.FILES.get("file")
@@ -284,8 +557,8 @@ def lesson_detail(request, lesson_id, course_id=None):
     if course_id is not None and lesson.course_id != course_id:
         return Response({"error": "Lesson not found"}, status=404)
 
-    if lesson.course.instructor_id != request.user.id:
-        return Response({"error": "Only instructor can modify lessons"}, status=403)
+    if not _can_manage_course(request.user, lesson.course):
+        return Response({"error": "Only instructors or admins can modify lessons"}, status=403)
 
     if request.method == "PATCH":
         serializer = LessonSerializer(
@@ -311,8 +584,8 @@ def module_detail(request, module_id, course_id=None):
     if course_id is not None and module.course_id != course_id:
         return Response({"error": "Module not found"}, status=404)
 
-    if module.course.instructor_id != request.user.id:
-        return Response({"error": "Only instructor can modify modules"}, status=403)
+    if not _can_manage_course(request.user, module.course):
+        return Response({"error": "Only instructors or admins can modify modules"}, status=403)
 
     module.delete()
     return Response({"message": "Module deleted successfully"}, status=200)
@@ -320,7 +593,7 @@ def module_detail(request, module_id, course_id=None):
 
 def _get_course_for_module_api(course_id, user):
     course = get_object_or_404(Course, id=course_id)
-    if user.role == "instructor" and course.instructor_id == user.id:
+    if _can_manage_course(user, course):
         return course
     if user.role == "student" and course.students.filter(id=user.id).exists():
         return course
@@ -339,8 +612,8 @@ def course_modules(request, course_id):
         serializer = ModuleSerializer(modules, many=True, context={"request": request})
         return Response(serializer.data)
 
-    if request.user.role != "instructor" or course.instructor_id != request.user.id:
-        return Response({"error": "Only instructor can create modules"}, status=403)
+    if not _can_manage_course(request.user, course):
+        return Response({"error": "Only instructors or admins can create modules"}, status=403)
 
     serializer = ModuleSerializer(data=request.data, context={"request": request})
     if serializer.is_valid():
@@ -363,8 +636,8 @@ def module_lessons(request, module_id):
         serializer = LessonSerializer(lessons, many=True, context=_build_lesson_serializer_context(request, lessons))
         return Response(serializer.data)
 
-    if request.user.role != "instructor" or course.instructor_id != request.user.id:
-        return Response({"error": "Only instructor can create lessons"}, status=403)
+    if not _can_manage_course(request.user, course):
+        return Response({"error": "Only instructors or admins can create lessons"}, status=403)
 
     upload = request.FILES.get("file")
     extraction_payload = None
@@ -452,8 +725,8 @@ def extract_lesson_file_preview(request, course_id):
     course = _get_course_for_module_api(course_id, request.user)
     if not course:
         return Response({"error": "Course not found or access denied"}, status=404)
-    if request.user.role != "instructor" or course.instructor_id != request.user.id:
-        return Response({"error": "Only instructor can extract lesson files"}, status=403)
+    if not _can_manage_course(request.user, course):
+        return Response({"error": "Only instructors or admins can extract lesson files"}, status=403)
 
     upload = request.FILES.get("file")
     if not upload:
@@ -526,8 +799,8 @@ def import_module_from_file(request, course_id):
     course = _get_course_for_module_api(course_id, request.user)
     if not course:
         return Response({"error": "Course not found or access denied"}, status=404)
-    if request.user.role != "instructor" or course.instructor_id != request.user.id:
-        return Response({"error": "Only instructor can import modules"}, status=403)
+    if not _can_manage_course(request.user, course):
+        return Response({"error": "Only instructors or admins can import modules"}, status=403)
 
     upload = request.FILES.get("file")
     if not upload:
@@ -670,10 +943,10 @@ def leave_feedback(request, course_id):
 @permission_classes([IsAuthenticated])
 def course_detail(request, course_id):
     try:
-        course = Course.objects.get(id=course_id)
+        course = Course.objects.select_related("category", "instructor").get(id=course_id)
     except Course.DoesNotExist:
         return Response({"error": "Course not found"}, status=404)
-    can_access = _allow(COURSE_OWNER_PERMISSION, request.user, course) or _allow(COURSE_ENROLLED_PERMISSION, request.user, course)
+    can_access = _can_view_course(request.user, course)
     if not can_access:
         return Response({"error": "Course not found or access denied"}, status=404)
 
@@ -700,16 +973,28 @@ def course_detail(request, course_id):
         "id": course.id,
         "title": course.title,
         "description": course.description,
-        "category": course.category,
+        "category": (
+            {"id": course.category.id, "name": course.category.name}
+            if course.category_id
+            else None
+        ),
+        "thumbnail": request.build_absolute_uri(course.thumbnail.url) if course.thumbnail else None,
+        "start_date": course.start_date,
+        "start_time": course.start_time,
+        "scheduled_start_at": course.get_start_datetime(),
         "is_archived": course.is_archived,
-        "status": "archived" if course.is_archived else "active",
-        "state": "archived" if course.is_archived else "active",
+        "status": course.get_status(),
+        "state": course.get_status(),
         "code": course.join_code,
         "join_code": course.join_code,
         "join_code_enabled": course.join_code_enabled,
+        "join_code_expiration": course.join_code_expiration,
         "modules_count": modules_count,
         "lessons_count": lessons_count,
         "students_count": students_qs.count(),
+        "pending_enrollment_requests_count": course.enrollment_requests.filter(
+            status=EnrollmentRequest.STATUS_PENDING
+        ).count(),
         "attendance_sessions_count": attendance_sessions_count,
         "average_grade": average_grade,
         "instructor": {
@@ -734,15 +1019,14 @@ def course_detail(request, course_id):
 def add_student(request, course_id):
 
     try:
-        course = Course.objects.get(
-            id=course_id,
-            instructor=request.user
-        )
+        course = Course.objects.get(id=course_id)
     except Course.DoesNotExist:
         return Response(
             {"error": "Course not found or access denied"},
             status=404
         )
+    if not _can_manage_course(request.user, course):
+        return Response({"error": "Course not found or access denied"}, status=404)
 
     student_code = request.data.get("student_id")
 
@@ -758,6 +1042,7 @@ def add_student(request, course_id):
         return Response({"error": "Student not found"}, status=404)
 
     course.students.add(student)
+    dispatch_event("student_added_to_course", course=course, student=student, actor=request.user)
 
     return Response({"message": "Student added successfully!"})
 
@@ -770,7 +1055,7 @@ def students_list(request, course_id):
         course = Course.objects.get(id=course_id)
     except Course.DoesNotExist:
         return Response({"error": "Course not found"}, status=404)
-    can_access = _allow(COURSE_OWNER_PERMISSION, request.user, course) or _allow(COURSE_ENROLLED_PERMISSION, request.user, course)
+    can_access = _can_view_course(request.user, course)
     if not can_access:
         return Response({"error": "Course not found or access denied"}, status=404)
 
@@ -3640,6 +3925,8 @@ def submit_task(request, course_id, activity_id):
                         file=f
                     )
 
+            dispatch_event("assignment_submitted", submission=submission, actor=request.user)
+
             return Response(
                 ActivitySubmissionSerializer(submission, context={"request": request}).data
             )
@@ -3666,6 +3953,8 @@ def submit_task(request, course_id, activity_id):
 
         for f in files:
             SubmissionAttachment.objects.create(submission=submission, file=f)
+
+        dispatch_event("assignment_submitted", submission=submission, actor=request.user)
 
         return Response(
             ActivitySubmissionSerializer(submission, context={"request": request}).data,
@@ -3749,6 +4038,7 @@ def grade_submission(request, course_id, activity_id, submission_id):
         if updated.grade is not None and updated.status != "graded":
             ActivitySubmission.objects.filter(pk=updated.pk).update(status="graded")
             updated.refresh_from_db()
+        dispatch_event("grade_posted", submission=updated, actor=request.user)
         return Response(ActivitySubmissionSerializer(updated, context={"request": request}).data)
     return Response(serializer.errors, status=400)
 
@@ -5900,6 +6190,7 @@ def quiz_submit(request, course_id, activity_id):
     if grading["status"] == QuizAttempt.STATUS_PENDING_REVIEW:
         feedback = "Submission received and pending manual review."
     _update_attempt_submission_record(attempt, feedback_text=feedback)
+    dispatch_event("quiz_completed", attempt=attempt, actor=request.user)
 
     attempt.refresh_from_db()
     if attempt.is_locked:
@@ -6082,6 +6373,8 @@ def attendance_records(request, course_id, session_id):
                 )
                 saved_records.append(record)
 
+        dispatch_event("attendance_marked", course=course, session=session, actor=request.user, records=saved_records)
+
         serializer = AttendanceRecordSerializer(saved_records, many=True)
         return Response({"saved": len(saved_records), "records": serializer.data}, status=200)
 
@@ -6112,6 +6405,7 @@ def attendance_records(request, course_id, session_id):
             "marked_by": request.user,
         },
     )
+    dispatch_event("attendance_marked", course=course, session=session, actor=request.user, records=[record])
     return Response(AttendanceRecordSerializer(record).data, status=200)
 
 
@@ -6157,6 +6451,53 @@ def attendance_by_course(request, course_id):
 def attendance_record_by_session(request, session_id):
     session = get_object_or_404(AttendanceSession, id=session_id)
     return attendance_records(request, session.course_id, session_id)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def course_meetings(request, course_id):
+    if request.method == "GET":
+        try:
+            meetings = list_course_meetings(course_id=course_id, user=request.user)
+        except PermissionError:
+            return Response({"error": "Course not found or access denied"}, status=404)
+
+        serializer = MeetingSerializer(meetings, many=True, context={"request": request})
+        return Response(serializer.data, status=200)
+
+    serializer = MeetingSerializer(data=request.data, context={"request": request})
+    serializer.is_valid(raise_exception=True)
+
+    try:
+        meeting = create_meeting(
+            course_id=course_id,
+            title=serializer.validated_data["title"],
+            scheduled_time=serializer.validated_data["scheduled_time"],
+            meeting_link=serializer.validated_data["meeting_link"],
+            created_by=request.user,
+        )
+    except PermissionError:
+        return Response({"error": "Only the course instructor can create meetings"}, status=403)
+
+    return Response(MeetingSerializer(meeting, context={"request": request}).data, status=201)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def meeting_join(request, meeting_id):
+    try:
+        meeting, attendance = join_meeting(meeting_id=meeting_id, student=request.user)
+    except PermissionError:
+        return Response({"error": "Only enrolled students can join meetings"}, status=403)
+
+    return Response(
+        {
+            "meeting": MeetingSerializer(meeting, context={"request": request}).data,
+            "meeting_link": meeting.meeting_link,
+            "joined_at": attendance.joined_at,
+        },
+        status=200,
+    )
 
 
 @api_view(["GET", "POST"])
@@ -6324,6 +6665,8 @@ def course_announcements(request, course_id):
                     file=f
                 )
 
+            dispatch_event("announcement_created", announcement=announcement, actor=request.user)
+
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
@@ -6355,7 +6698,7 @@ class CourseViewSet(viewsets.ModelViewSet):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def join_course(request):
-    code = request.data.get("code", "").upper()
+    code = str(request.data.get("code", "") or "").strip().upper()
 
     if not code:
         return Response({"error": "Join code required"}, status=400)
@@ -6368,18 +6711,94 @@ def join_course(request):
     if request.user.role != "student":
         return Response({"error": "Only students can join courses"}, status=403)
 
-    if request.user in course.students.all():
-        return Response({"message": "Already enrolled"})
+    if course.students.filter(id=request.user.id).exists():
+        return Response({"message": "You are already enrolled in this course."}, status=200)
 
-    course.students.add(request.user)
+    if EnrollmentRequest.objects.filter(
+        course=course,
+        student=request.user,
+        status=EnrollmentRequest.STATUS_PENDING,
+    ).exists():
+        return Response({"message": "Enrollment request already pending approval."}, status=200)
 
-    return Response({"message": "Successfully joined course"})
+    enrollment_request = EnrollmentRequest.objects.create(
+        course=course,
+        student=request.user,
+        status=EnrollmentRequest.STATUS_PENDING,
+    )
+    dispatch_event("enrollment_request_created", enrollment_request=enrollment_request, actor=request.user)
+
+    serializer = EnrollmentRequestSerializer(enrollment_request, context={"request": request})
+    return Response(
+        {
+            "message": "Enrollment request sent. Please wait for instructor approval.",
+            "request": serializer.data,
+        },
+        status=201,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def enrollment_requests_list(request):
+    if not _allow(INSTRUCTOR_ROLE_PERMISSION, request.user):
+        return Response({"error": "Only instructors can view enrollment requests."}, status=403)
+
+    queryset = _pending_enrollment_requests_for_user(request.user)
+    course_id = request.query_params.get("course_id")
+    if course_id not in (None, ""):
+        queryset = queryset.filter(course_id=course_id)
+
+    serializer = EnrollmentRequestSerializer(queryset.order_by("-created_at"), many=True, context={"request": request})
+    return Response(serializer.data)
+
+
+def _review_enrollment_request(request, enrollment_request_id, next_status):
+    enrollment_request = get_object_or_404(
+        EnrollmentRequest.objects.select_related("course", "student", "reviewed_by"),
+        id=enrollment_request_id,
+    )
+    course = enrollment_request.course
+    if not _can_manage_course(request.user, course):
+        return Response({"error": "Course not found or access denied"}, status=404)
+
+    if enrollment_request.status != EnrollmentRequest.STATUS_PENDING:
+        return Response({"error": "This enrollment request has already been reviewed."}, status=400)
+
+    with transaction.atomic():
+        enrollment_request.status = next_status
+        enrollment_request.reviewed_at = timezone.now()
+        enrollment_request.reviewed_by = request.user
+        enrollment_request.save(update_fields=["status", "reviewed_at", "reviewed_by", "updated_at"])
+
+        if next_status == EnrollmentRequest.STATUS_APPROVED:
+            course.students.add(enrollment_request.student)
+            dispatch_event("student_joined_course", course=course, student=enrollment_request.student, actor=request.user)
+
+    serializer = EnrollmentRequestSerializer(enrollment_request, context={"request": request})
+    return Response(serializer.data, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def approve_enrollment_request(request, enrollment_request_id):
+    if not _allow(INSTRUCTOR_ROLE_PERMISSION, request.user):
+        return Response({"error": "Only instructors can approve enrollment requests."}, status=403)
+    return _review_enrollment_request(request, enrollment_request_id, EnrollmentRequest.STATUS_APPROVED)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def reject_enrollment_request(request, enrollment_request_id):
+    if not _allow(INSTRUCTOR_ROLE_PERMISSION, request.user):
+        return Response({"error": "Only instructors can reject enrollment requests."}, status=403)
+    return _review_enrollment_request(request, enrollment_request_id, EnrollmentRequest.STATUS_REJECTED)
 
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def toggle_join_code(request, course_id):
     course = Course.objects.get(id=course_id)
-    if course.instructor != request.user:
+    if not _can_manage_course(request.user, course):
         return Response({"error": "Unauthorized"}, status=403)
     
     enabled = request.data.get("enabled", True)
@@ -6392,12 +6811,19 @@ def toggle_join_code(request, course_id):
 @permission_classes([IsAuthenticated])
 def toggle_archive(request, course_id):
     course = Course.objects.get(id=course_id)
-    if course.instructor != request.user:
+    if not _can_manage_course(request.user, course):
         return Response({"error": "Unauthorized"}, status=403)
 
     archived = bool(request.data.get("archived", True))
     course.is_archived = archived
     course.save(update_fields=["is_archived"])
+    if _is_admin_user(request.user):
+        _log_admin_action(
+            "Course archived" if course.is_archived else "Course restored",
+            performed_by=request.user,
+            target_user=course.instructor,
+            description=f"Set course '{course.title}' archive state to {course.is_archived}.",
+        )
 
     return Response(
         {
@@ -6412,7 +6838,7 @@ def toggle_archive(request, course_id):
 @permission_classes([IsAuthenticated])
 def regenerate_join_code(request, course_id):
     course = Course.objects.get(id=course_id)
-    if course.instructor != request.user:
+    if not _can_manage_course(request.user, course):
         return Response({"error": "Unauthorized"}, status=403)
     
     course.join_code = secrets.token_hex(4).upper()  # 8-char code

@@ -93,10 +93,46 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
             "allow_username_change",
             "default_user_role",
             "analytics_polling_interval",
+            "analytics_low_risk_max",
+            "analytics_medium_risk_max",
+            "analytics_high_risk_min",
+            "analytics_passing_grade",
             "max_login_attempts",
             "updated_at",
         )
         read_only_fields = ("updated_at",)
+
+    def validate(self, attrs):
+        instance = self.instance
+
+        def next_value(field):
+            return attrs.get(field, getattr(instance, field, None))
+
+        low_max = float(next_value("analytics_low_risk_max"))
+        medium_max = float(next_value("analytics_medium_risk_max"))
+        high_min = float(next_value("analytics_high_risk_min"))
+        passing_grade = float(next_value("analytics_passing_grade"))
+
+        for field_name, value in (
+            ("analytics_low_risk_max", low_max),
+            ("analytics_medium_risk_max", medium_max),
+            ("analytics_high_risk_min", high_min),
+        ):
+            if value < 0 or value > 1:
+                raise serializers.ValidationError({field_name: "Risk thresholds must be between 0 and 1."})
+
+        if not (0 <= passing_grade <= 100):
+            raise serializers.ValidationError({"analytics_passing_grade": "Passing grade must be between 0 and 100."})
+        if low_max >= medium_max:
+            raise serializers.ValidationError(
+                {"analytics_low_risk_max": "Low risk max must be lower than medium risk max."}
+            )
+        if high_min < medium_max:
+            raise serializers.ValidationError(
+                {"analytics_high_risk_min": "High risk min must be equal to or greater than medium risk max."}
+            )
+
+        return attrs
 
 
 class AdminLogSerializer(serializers.ModelSerializer):
@@ -244,11 +280,3 @@ class StudentNotificationSettingsSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, validators=[validate_password])
-
-
-class StudentNotificationReadSerializer(serializers.Serializer):
-    notification_keys = serializers.ListField(
-        child=serializers.CharField(max_length=255),
-        allow_empty=True,
-        required=True,
-    )

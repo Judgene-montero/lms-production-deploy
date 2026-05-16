@@ -2,11 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "../utils/axiosInstance";
 import { RefreshCw } from "lucide-react";
 
-const API_ADMIN = "http://127.0.0.1:8000/api/admin";
-const getAuthHeaders = () => ({
-  headers: { Authorization: `Bearer ${localStorage.getItem("access")}` },
-});
-
 const fmt = (value) => {
   if (!value) return "-";
   const d = new Date(value);
@@ -30,7 +25,7 @@ export default function AdminLogs() {
       if (actionFilter.trim()) params.set("action", actionFilter.trim());
       params.set("ordering", sortOrder);
 
-      const res = await axios.get(`${API_ADMIN}/logs/?${params.toString()}`, getAuthHeaders());
+      const res = await axios.get(`/api/admin/logs/?${params.toString()}`);
       setLogs(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       setLogs([]);
@@ -140,4 +135,3 @@ export default function AdminLogs() {
     </div>
   );
 }
-

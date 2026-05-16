@@ -38,6 +38,7 @@ export default function MyCourses() {
   const [courseMeta, setCourseMeta] = useState({});
   const [joinCode, setJoinCode] = useState("");
   const [message, setMessage] = useState("");
+  const [joining, setJoining] = useState(false);
   const navigate = useNavigate();
 
   const enrichCourses = useCallback(async (list = []) => {
@@ -114,24 +115,29 @@ export default function MyCourses() {
       return;
     }
 
+    setJoining(true);
     try {
       await axios.post("/api/courses/join/", { code: joinCode });
-
-      setMessage("Successfully joined course!");
+      setMessage("Enrollment request sent. Please wait for instructor approval.");
       setJoinCode("");
-      fetchCourses();
     } catch (err) {
       setMessage(
         err.response?.data?.error ||
           err.response?.data?.message ||
           "Failed to join course."
       );
+    } finally {
+      setJoining(false);
     }
   };
 
-  const messageToneClass = message.toLowerCase().includes("success")
-    ? "border-green-200 bg-green-50 text-green-700"
-    : "border-red-200 bg-red-50 text-red-700";
+  const normalizedMessage = message.toLowerCase();
+  const messageToneClass =
+    normalizedMessage.includes("request sent") ||
+    normalizedMessage.includes("already enrolled") ||
+    normalizedMessage.includes("pending approval")
+      ? "border-green-200 bg-green-50 text-green-700"
+      : "border-red-200 bg-red-50 text-red-700";
 
   const activeCoursesCount = courses.filter((c) => Number(c.progress ?? c.completion_rate ?? 0) > 0).length;
   const completedCoursesCount = courses.filter((c) => Number(courseMeta[c.id]?.completionPct ?? c.progress ?? c.completion_rate ?? 0) >= 100).length;
@@ -157,16 +163,12 @@ export default function MyCourses() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:w-auto lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 sm:w-auto">
               <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-4 shadow-sm">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Enrolled</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">{courses.length}</p>
               </div>
               <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-4 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Active</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">{activeCoursesCount}</p>
-              </div>
-              <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-4 shadow-sm col-span-2 lg:col-span-1">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Completed</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">{completedCoursesCount}</p>
               </div>
@@ -183,7 +185,7 @@ export default function MyCourses() {
                 </span>
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">Join a Course</h3>
-                  <p className="mt-1 text-sm text-slate-600">Use a class code to add a new course to your workspace instantly.</p>
+                  <p className="mt-1 text-sm text-slate-600">Use a class code to send an enrollment request to the instructor.</p>
                 </div>
               </div>
             </div>
@@ -203,9 +205,9 @@ export default function MyCourses() {
               <button
                 onClick={handleJoinCourse}
                 className="rounded-2xl bg-[linear-gradient(135deg,#059669,#0f766e)] px-5 py-3 text-sm font-medium text-white shadow-[0_12px_26px_rgba(5,150,105,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_30px_rgba(5,150,105,0.28)] disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!joinCode.trim()}
+                disabled={!joinCode.trim() || joining}
               >
-                Join Course
+                {joining ? "Sending..." : "Join Course"}
               </button>
             </div>
           </div>

@@ -11,8 +11,11 @@ from users_app.views import (
     InstructorNotificationSettingsAPIView,
     InstructorProfileAPIView,
     InstructorProfileAvatarUploadAPIView,
+    NotificationListAPIView,
+    NotificationMarkAllReadAPIView,
+    NotificationMarkReadAPIView,
+    NotificationUnreadCountAPIView,
     StudentNotificationSettingsAPIView,
-    StudentNotificationReadAPIView,
     StudentProfileAPIView,
     StudentProfileAvatarUploadAPIView,
 )
@@ -31,6 +34,9 @@ urlpatterns = [
     # Dashboards App
     path('api/', include('dashboards_app.urls')),
 
+    path("api/categories/", course_views.category_list_create, name="category-list-create"),
+    path("api/categories/<int:category_id>/", course_views.category_detail, name="category-detail"),
+
     # Courses App
     path('api/courses/', include('courses.urls')),
     path('api/modules/<int:module_id>/lessons/', course_views.module_lessons, name='api-module-lessons'),
@@ -47,7 +53,10 @@ urlpatterns = [
     path("api/student/profile/", StudentProfileAPIView.as_view()),
     path("api/student/profile/avatar/", StudentProfileAvatarUploadAPIView.as_view()),
     path("api/student/notification-settings/", StudentNotificationSettingsAPIView.as_view()),
-    path("api/student/notification-reads/", StudentNotificationReadAPIView.as_view()),
+    path("api/notifications/", NotificationListAPIView.as_view()),
+    path("api/notifications/unread-count/", NotificationUnreadCountAPIView.as_view()),
+    path("api/notifications/<int:notification_id>/read/", NotificationMarkReadAPIView.as_view()),
+    path("api/notifications/mark-all-read/", NotificationMarkAllReadAPIView.as_view()),
     path("api/instructor/upcoming-deadlines/", InstructorUpcomingDeadlinesAPIView.as_view()),
     path("api/instructor/students/<int:student_id>/insights/", InstructorStudentInsightsAPIView.as_view()),
     path("api/auth/change-password/", ChangePasswordAPIView.as_view()),

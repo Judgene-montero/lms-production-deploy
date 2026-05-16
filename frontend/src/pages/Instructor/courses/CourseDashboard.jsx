@@ -11,7 +11,7 @@ const CourseDashboard = () => {
   useEffect(() => {
     const fetchCourse = async () => {
       try {
-        const res = await axios.get(`http://127.0.0.1:8000/api/courses/${courseId}/`);
+        const res = await axios.get(`/api/courses/${courseId}/`);
         setCourse(res.data);
       } catch (err) {
         console.error(err);
@@ -63,4 +63,3 @@ const CourseDashboard = () => {
 };
 
 export default CourseDashboard;
-

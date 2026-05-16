@@ -11,6 +11,8 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Tags,
+  BookOpen,
 } from "lucide-react";
 
 const sections = [
@@ -19,9 +21,10 @@ const sections = [
     items: [{ name: "Overview", path: "/admin", icon: LayoutDashboard }],
   },
   {
-    title: "User Management",
+    title: "Control",
     items: [
       { name: "All Users", path: "/admin/users", icon: Users },
+      { name: "Courses", path: "/admin/courses", icon: BookOpen },
       { name: "Pending Instructor Approvals", path: "/admin/instructor-approvals", icon: UserCheck },
     ],
   },
@@ -32,6 +35,7 @@ const sections = [
   {
     title: "System",
     items: [
+      { name: "Categories", path: "/admin/categories", icon: Tags },
       { name: "Settings", path: "/admin/settings", icon: Settings },
       { name: "Logs", path: "/admin/logs", icon: FileText },
     ],

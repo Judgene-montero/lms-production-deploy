@@ -77,10 +77,54 @@ class SubmissionSerializer(serializers.ModelSerializer):
 # --------------------------
 class NotificationSerializer(serializers.ModelSerializer):
     time = serializers.SerializerMethodField()
+    actor_name = serializers.SerializerMethodField()
+    course_id = serializers.SerializerMethodField()
+    course_title = serializers.SerializerMethodField()
+    activity_id = serializers.SerializerMethodField()
+    submission_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Notification
-        fields = ("id", "message", "time", "created_at")
+        fields = (
+            "id",
+            "event_key",
+            "title",
+            "message",
+            "notification_type",
+            "is_read",
+            "read_at",
+            "time",
+            "created_at",
+            "actor_name",
+            "course_id",
+            "course_title",
+            "activity_id",
+            "submission_id",
+        )
 
     def get_time(self, obj):
         return obj.created_at.strftime("%b %d, %Y %I:%M %p")
+
+    def get_actor_name(self, obj):
+        actor = getattr(obj, "actor", None)
+        if not actor:
+            return ""
+        full_name = getattr(actor, "full_name", None)
+        if callable(full_name):
+            value = str(full_name() or "").strip()
+            if value:
+                return value
+        return f"{actor.first_name} {actor.last_name}".strip() or actor.username
+
+    def get_course_id(self, obj):
+        return getattr(obj, "course_id", None)
+
+    def get_course_title(self, obj):
+        course = getattr(obj, "course", None)
+        return getattr(course, "title", "") if course else ""
+
+    def get_activity_id(self, obj):
+        return getattr(obj, "activity_id", None)
+
+    def get_submission_id(self, obj):
+        return getattr(obj, "submission_id", None)

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: enhance-lms-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    startCommand: gunicorn core.wsgi:application
+    preDeployCommand: python manage.py migrate --noinput
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: enhance-lms-backend.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://your-frontend-project.vercel.app
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://your-frontend-project.vercel.app
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: enhance-lms-db
+          property: connectionString
+
+databases:
+  - name: enhance-lms-db
+    databaseName: enhance_lms
+    user: enhance_lms

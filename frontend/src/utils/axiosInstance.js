@@ -1,7 +1,8 @@
 import axios from "axios";
+import { getApiBaseUrl } from "./runtimeConfig";
 
 const axiosInstance = axios.create({
-  baseURL: "http://127.0.0.1:8000",
+  baseURL: getApiBaseUrl(),
 });
 
 let refreshPromise = null;
@@ -52,7 +53,7 @@ const refreshAccessToken = async () => {
     }
 
     refreshPromise = axios
-      .post(`http://127.0.0.1:8000${REFRESH_ENDPOINT}`, { refresh })
+      .post(`${getApiBaseUrl()}${REFRESH_ENDPOINT}`, { refresh })
       .then((response) => {
         const nextAccess = response?.data?.access;
         if (!nextAccess) {

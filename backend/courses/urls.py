@@ -1,7 +1,19 @@
 from django.urls import path
 from . import views
 from rest_framework.routers import DefaultRouter
-from .views import ActivitySubmissionViewSet, join_course, regenerate_join_code, toggle_archive, toggle_join_code
+from .views import (
+    ActivitySubmissionViewSet,
+    admin_content_delete,
+    admin_course_detail,
+    admin_course_management,
+    approve_enrollment_request,
+    enrollment_requests_list,
+    join_course,
+    reject_enrollment_request,
+    regenerate_join_code,
+    toggle_archive,
+    toggle_join_code,
+)
 
 urlpatterns = [
     # -----------------------------
@@ -9,6 +21,9 @@ urlpatterns = [
     # -----------------------------
     path("student/courses/", views.student_enrolled_courses),
     path("join/", join_course, name="join-course-global"),
+    path("enrollment-requests/", enrollment_requests_list, name="enrollment-requests-list"),
+    path("enrollment-requests/<int:enrollment_request_id>/approve/", approve_enrollment_request, name="enrollment-request-approve"),
+    path("enrollment-requests/<int:enrollment_request_id>/reject/", reject_enrollment_request, name="enrollment-request-reject"),
     path("student/courses/<int:course_id>/join/", views.join_course, name="join-course"),
     path(
     "<int:course_id>/activities/<int:activity_id>/submissions/<int:submission_id>/",
@@ -25,6 +40,9 @@ urlpatterns = [
     # Instructor Courses
     # -----------------------------
     path("", views.instructor_courses_list, name="instructor-courses-list"),
+    path("admin/manage/", admin_course_management, name="admin-course-management"),
+    path("admin/manage/<int:course_id>/", admin_course_detail, name="admin-course-detail"),
+    path("admin/content/<str:content_type>/<int:object_id>/", admin_content_delete, name="admin-content-delete"),
     path('courses/<int:course_id>/toggle-join-code/', toggle_join_code),
     path('courses/<int:course_id>/toggle-archive/', toggle_archive),
     path('courses/<int:course_id>/regenerate-join-code/', regenerate_join_code),
@@ -67,7 +85,9 @@ urlpatterns = [
     path("<int:course_id>/activities/<int:activity_id>/submissions/", views.submissions_list, name="submissions-list"),
     path("<int:course_id>/activities/<int:activity_id>/submit/", views.submit_task, name="submit-task"),
     path("<int:course_id>/activities/<int:activity_id>/attendance/", views.activity_attendance, name="activity-attendance"),
+    path("<int:course_id>/meetings/", views.course_meetings, name="course-meetings"),
     path("submissions/<int:submission_id>/delete/", views.unsubmit_task, name="unsubmit-task"),
+    path("meetings/<int:meeting_id>/join/", views.meeting_join, name="meeting-join"),
     path("<int:course_id>/attendance/sessions/", views.attendance_sessions, name="attendance-sessions"),
     path("<int:course_id>/attendance/sessions/<int:session_id>/", views.attendance_session_detail, name="attendance-session-detail"),
     path("<int:course_id>/attendance/sessions/<int:session_id>/records/", views.attendance_records, name="attendance-records"),

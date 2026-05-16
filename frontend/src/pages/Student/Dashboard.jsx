@@ -9,7 +9,7 @@ import {
   resolveStudentAvatar,
   subscribeStudentProfile,
 } from "../../utils/studentProfile";
-import useStudentNotifications from "../../hooks/useStudentNotifications";
+import useNotifications from "../../hooks/useNotifications";
 
 const SidebarSkeleton = () => (
   <div className="animate-pulse space-y-6">
@@ -35,13 +35,12 @@ const SidebarSkeleton = () => (
 
 const ProfileHeader = ({ student }) => (
   <div className="flex items-center gap-4">
-    <div className="relative">
+    <div>
       <img
         src={resolveStudentAvatar(student || {}) || getDefaultStudentAvatarDataUrl(student || {})}
         alt="Avatar"
         className="h-16 w-16 rounded-full border-2 border-emerald-500 object-cover"
       />
-      <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
     </div>
 
     <div>
@@ -58,7 +57,7 @@ const StudentDashboard = () => {
   const [studentData, setStudentData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useStudentNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -124,10 +123,12 @@ const StudentDashboard = () => {
                         onClick={() => {
                           markAsRead(item.id);
                           setNotificationsOpen(false);
-                          navigate(item.target.pathname, { state: item.target.state });
+                          if (item.target?.pathname) {
+                            navigate(item.target.pathname, { state: item.target.state });
+                          }
                         }}
                         className={`block w-full rounded-lg border p-3 text-left transition ${
-                          item.read ? "border-gray-100 bg-gray-50" : "border-emerald-100 bg-emerald-50/50"
+                          item.isRead ? "border-gray-100 bg-gray-50" : "border-emerald-100 bg-emerald-50/50"
                         }`}
                       >
                         <p className="text-sm font-semibold text-gray-900">{item.title}</p>

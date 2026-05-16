@@ -1,11 +1,13 @@
 # users_app/views.py
 import pandas as pd
 import logging
+import secrets
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework.permissions import BasePermission
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
@@ -13,18 +15,21 @@ from django.contrib.auth.hashers import make_password
 from django.core import signing
 from django.core.mail import send_mail
 from django.conf import settings
-from django.db.models import Q
+from django.utils import timezone
+from django.db import transaction
+from django.db.models import Count, Q
 from .models import ApprovedSchoolID, Course, SiteSettings, AdminLog
-from .models import StudentNotificationRead
+from .models import Notification
+from .services.notifications import publish_notification, publish_notifications
 from .serializers import (
     ApprovedSchoolIDSerializer as ApprovedIDSerializer,
     SiteSettingsSerializer,
     AdminLogSerializer,
     InstructorProfileSerializer,
     InstructorNotificationSettingsSerializer,
+    NotificationSerializer,
     StudentProfileSerializer,
     StudentNotificationSettingsSerializer,
-    StudentNotificationReadSerializer,
     ChangePasswordSerializer,
 )
 from rest_framework.permissions import IsAuthenticated
@@ -52,6 +57,158 @@ def create_admin_log(action, performed_by=None, target_user=None, description=""
             },
             exc_info=True,
         )
+
+
+def _is_admin(user):
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and (
+            getattr(user, "role", "") == "admin"
+            or getattr(user, "is_staff", False)
+            or getattr(user, "is_superuser", False)
+        )
+    )
+
+
+class IsSystemAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return _is_admin(getattr(request, "user", None))
+
+
+def _is_instructor_or_admin(user):
+    return bool(user and getattr(user, "is_authenticated", False) and getattr(user, "role", "") in {"instructor", "admin"})
+
+
+def _user_status_label(user):
+    if not getattr(user, "is_active", False):
+        if getattr(user, "role", "") == "instructor" and getattr(user, "is_email_verified", False):
+            return "pending"
+        return "inactive"
+    return "active"
+
+
+def _serialize_user_activity(user):
+    from courses.models import (
+        ActivitySubmission,
+        AttendanceRecord,
+        MeetingAttendance,
+        QuizAttempt,
+    )
+
+    recent_logs = (
+        AdminLog.objects.filter(Q(target_user=user) | Q(performed_by=user))
+        .select_related("performed_by", "target_user")
+        .order_by("-timestamp")[:12]
+    )
+    notification_stats = Notification.objects.filter(recipient=user).aggregate(
+        total=Count("id"),
+        unread=Count("id", filter=Q(is_read=False)),
+    )
+
+    activity_summary = {
+        "status": _user_status_label(user),
+        "date_joined": user.date_joined,
+        "last_login": user.last_login,
+        "notifications_total": notification_stats.get("total", 0) or 0,
+        "notifications_unread": notification_stats.get("unread", 0) or 0,
+    }
+    related_courses = []
+    recent_events = []
+
+    if getattr(user, "role", "") == "student":
+        related_courses = list(
+            user.enrolled_courses.order_by("title").values("id", "title")[:20]
+        )
+        recent_submissions = (
+            ActivitySubmission.objects.filter(student=user)
+            .select_related("activity__course")
+            .order_by("-submitted_at")[:8]
+        )
+        recent_events.extend(
+            [
+                {
+                    "type": "submission",
+                    "label": submission.activity.title,
+                    "course": submission.activity.course.title,
+                    "at": submission.submitted_at,
+                    "status": submission.status,
+                }
+                for submission in recent_submissions
+            ]
+        )
+        activity_summary.update(
+            {
+                "course_count": len(related_courses),
+                "submissions_count": ActivitySubmission.objects.filter(student=user).count(),
+                "quiz_attempts_count": QuizAttempt.objects.filter(student=user).count(),
+                "attendance_records_count": AttendanceRecord.objects.filter(student=user).count(),
+                "meeting_attendance_count": MeetingAttendance.objects.filter(student=user).count(),
+            }
+        )
+    elif getattr(user, "role", "") == "instructor":
+        related_courses = list(
+            user.courses.order_by("title").values("id", "title")[:20]
+        )
+        recent_submissions = (
+            ActivitySubmission.objects.filter(activity__course__instructor=user)
+            .select_related("activity__course", "student")
+            .order_by("-submitted_at")[:8]
+        )
+        recent_events.extend(
+            [
+                {
+                    "type": "student_submission",
+                    "label": f"{submission.student.username} submitted {submission.activity.title}",
+                    "course": submission.activity.course.title,
+                    "at": submission.submitted_at,
+                    "status": submission.status,
+                }
+                for submission in recent_submissions
+            ]
+        )
+        activity_summary.update(
+            {
+                "course_count": len(related_courses),
+                "student_count": User.objects.filter(enrolled_courses__instructor=user, role="student").distinct().count(),
+                "submissions_to_review": ActivitySubmission.objects.filter(
+                    activity__course__instructor=user,
+                    status="submitted",
+                    grade__isnull=True,
+                ).count(),
+            }
+        )
+    else:
+        related_courses = list(
+            user.courses.order_by("title").values("id", "title")[:20]
+        )
+        activity_summary.update(
+            {
+                "course_count": len(related_courses),
+                "admin_actions_count": AdminLog.objects.filter(performed_by=user).count(),
+            }
+        )
+
+    return {
+        "summary": activity_summary,
+        "courses": related_courses,
+        "recent_activity": [
+            {
+                "id": log.id,
+                "action": log.action,
+                "description": log.description,
+                "timestamp": log.timestamp,
+                "performed_by": getattr(log.performed_by, "username", None),
+                "target_user": getattr(log.target_user, "username", None),
+            }
+            for log in recent_logs
+        ],
+        "recent_events": sorted(
+            recent_events,
+            key=lambda item: item.get("at") or timezone.now(),
+            reverse=True,
+        )[:8],
+    }
 
 # --------------------------
 # USER PROFILE VIEW
@@ -125,7 +282,7 @@ class UserProfileView(APIView):
 
 
 def _ensure_instructor(user):
-    return getattr(user, "role", "") == "instructor"
+    return _is_instructor_or_admin(user)
 
 
 def _ensure_student(user):
@@ -333,44 +490,6 @@ class StudentNotificationSettingsAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class StudentNotificationReadAPIView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        if not _ensure_student(request.user):
-            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
-
-        keys = list(
-            StudentNotificationRead.objects.filter(student=request.user).values_list("notification_key", flat=True)
-        )
-        return Response({"notification_keys": keys}, status=status.HTTP_200_OK)
-
-    def post(self, request):
-        if not _ensure_student(request.user):
-            return Response({"error": "Only students can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = StudentNotificationReadSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        keys = list(dict.fromkeys(serializer.validated_data["notification_keys"]))
-
-        existing_keys = set(
-            StudentNotificationRead.objects.filter(student=request.user, notification_key__in=keys).values_list("notification_key", flat=True)
-        )
-        new_rows = [
-            StudentNotificationRead(student=request.user, notification_key=key)
-            for key in keys
-            if key and key not in existing_keys
-        ]
-        if new_rows:
-            StudentNotificationRead.objects.bulk_create(new_rows)
-
-        all_keys = list(
-            StudentNotificationRead.objects.filter(student=request.user).values_list("notification_key", flat=True)
-        )
-        return Response({"notification_keys": all_keys}, status=status.HTTP_200_OK)
-
-
 class ChangePasswordAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
@@ -388,6 +507,74 @@ class ChangePasswordAPIView(APIView):
         user.set_password(new_password)
         user.save(update_fields=["password"])
         return Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
+
+
+class NotificationListAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        queryset = (
+            Notification.objects.filter(recipient=request.user)
+            .select_related("recipient", "actor", "course", "activity", "submission")
+            .order_by("-created_at", "-id")
+        )
+        serializer = NotificationSerializer(queryset[:100], many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class NotificationUnreadCountAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        unread_count = Notification.objects.filter(recipient=request.user, is_read=False).count()
+        return Response({"unread_count": unread_count}, status=status.HTTP_200_OK)
+
+
+class NotificationMarkReadAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, notification_id):
+        notification = (
+            Notification.objects.filter(id=notification_id, recipient=request.user)
+            .select_related("recipient", "actor", "course", "activity", "submission")
+            .first()
+        )
+        if not notification:
+            return Response({"error": "Notification not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not notification.is_read:
+            notification.is_read = True
+            notification.read_at = timezone.now()
+            notification.save(update_fields=["is_read", "read_at"])
+            publish_notification(notification)
+
+        serializer = NotificationSerializer(notification)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class NotificationMarkAllReadAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        now = timezone.now()
+        pending = list(
+            Notification.objects.filter(recipient=request.user, is_read=False)
+            .select_related("recipient", "actor", "course", "activity", "submission")
+            .order_by("-created_at", "-id")
+        )
+        updated = 0
+        if pending:
+            ids = [item.id for item in pending]
+            updated = Notification.objects.filter(id__in=ids).update(is_read=True, read_at=now)
+            for item in pending:
+                item.is_read = True
+                item.read_at = now
+            publish_notifications(pending)
+        return Response({"updated": updated}, status=status.HTTP_200_OK)
 # --------------------------
 # CHECK APPROVED ID (GET)
 # --------------------------
@@ -556,7 +743,7 @@ def verify_email(request, token):
 # --------------------------
 class PendingInstructorApprovalsView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def get(self, request):
         pending = User.objects.filter(
@@ -581,7 +768,7 @@ class PendingInstructorApprovalsView(APIView):
 
 class ApproveInstructorView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def post(self, request, user_id):
         try:
@@ -615,10 +802,10 @@ class ApproveInstructorView(APIView):
 
 class AdminUserListView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def get(self, request):
-        queryset = User.objects.all().order_by("-date_joined")
+        queryset = User.objects.prefetch_related("courses", "enrolled_courses").order_by("-date_joined")
 
         role = (request.query_params.get("role") or "").strip().lower()
         search = (request.query_params.get("search") or "").strip().lower()
@@ -638,11 +825,22 @@ class AdminUserListView(APIView):
                 "username": u.username,
                 "email": u.email,
                 "first_name": u.first_name,
+                "middle_initial": u.middle_initial,
                 "last_name": u.last_name,
                 "role": u.role,
                 "school_id": u.school_id,
+                "college": u.college,
                 "is_email_verified": bool(getattr(u, "is_email_verified", False)),
                 "is_active": u.is_active,
+                "status": _user_status_label(u),
+                "last_login": u.last_login,
+                "course_count": (u.courses.count() if u.role in {"instructor", "admin"} else u.enrolled_courses.count()) or 0,
+                "course_titles": (
+                    list(u.courses.order_by("title").values_list("title", flat=True)[:5])
+                    if u.role in {"instructor", "admin"}
+                    else list(u.enrolled_courses.order_by("title").values_list("title", flat=True)[:5])
+                ),
+                "notification_count": u.notifications.count(),
                 "date_joined": u.date_joined,
             }
             for u in queryset
@@ -652,7 +850,7 @@ class AdminUserListView(APIView):
 
 class AdminUserDetailView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def get_user(self, user_id):
         return User.objects.filter(id=user_id).first()
@@ -661,6 +859,7 @@ class AdminUserDetailView(APIView):
         user = self.get_user(user_id)
         if not user:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        activity = _serialize_user_activity(user)
         return Response(
             {
                 "id": user.id,
@@ -674,7 +873,10 @@ class AdminUserDetailView(APIView):
                 "college": user.college,
                 "is_email_verified": bool(getattr(user, "is_email_verified", False)),
                 "is_active": user.is_active,
+                "status": _user_status_label(user),
+                "last_login": user.last_login,
                 "date_joined": user.date_joined,
+                "activity": activity,
             },
             status=status.HTTP_200_OK,
         )
@@ -686,21 +888,33 @@ class AdminUserDetailView(APIView):
 
         action_notes = []
         data = request.data or {}
-        if "is_active" in data:
-            user.is_active = bool(data.get("is_active"))
-            action_notes.append("active status updated")
-        if "status" in data:
-            user.is_active = str(data.get("status")).lower() == "active"
-            action_notes.append("status updated")
-        if "college" in data:
-            user.college = str(data.get("college", "")).strip() or None
-            action_notes.append("college updated")
-        if "role" in data:
-            next_role = str(data.get("role", "")).strip().lower()
-            if next_role in {"student", "instructor"}:
-                user.role = next_role
-                action_notes.append("role updated")
-        user.save()
+        settings_obj, _ = SiteSettings.objects.get_or_create(id=1)
+
+        with transaction.atomic():
+            if "is_active" in data:
+                user.is_active = bool(data.get("is_active"))
+                action_notes.append("active status updated")
+            if "status" in data:
+                next_status = str(data.get("status")).strip().lower()
+                if next_status in {"active", "inactive", "pending"}:
+                    user.is_active = next_status == "active"
+                    if next_status == "pending" and user.role == "instructor":
+                        user.is_email_verified = True
+                    action_notes.append(f"status set to {next_status}")
+            if "college" in data:
+                user.college = str(data.get("college", "")).strip() or None
+                action_notes.append("college updated")
+            if "role" in data:
+                next_role = str(data.get("role", "")).strip().lower()
+                if next_role in {"student", "instructor"} and next_role != user.role:
+                    user.role = next_role
+                    if next_role == "instructor" and settings_obj.require_email_verification and not user.is_email_verified:
+                        user.is_active = False
+                    action_notes.append(f"role changed to {next_role}")
+            if "is_email_verified" in data:
+                user.is_email_verified = bool(data.get("is_email_verified"))
+                action_notes.append("email verification updated")
+            user.save()
         if action_notes:
             create_admin_log(
                 action="User updated",
@@ -732,7 +946,7 @@ class AdminUserDetailView(APIView):
 
 class AdminBulkStatusView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def put(self, request):
         user_ids = request.data.get("user_ids") or []
@@ -752,9 +966,48 @@ class AdminBulkStatusView(APIView):
         return Response({"updated": updated, "status": status_value}, status=status.HTTP_200_OK)
 
 
+class AdminUserActivityView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsSystemAdmin]
+
+    def get(self, request, user_id):
+        user = User.objects.filter(id=user_id).first()
+        if not user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_serialize_user_activity(user), status=status.HTTP_200_OK)
+
+
+class AdminUserResetPasswordView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsSystemAdmin]
+
+    def post(self, request, user_id):
+        user = User.objects.filter(id=user_id).first()
+        if not user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        temporary_password = request.data.get("temporary_password")
+        temporary_password = str(temporary_password or "").strip() or secrets.token_urlsafe(9)
+        user.set_password(temporary_password)
+        user.save(update_fields=["password"])
+        create_admin_log(
+            action="Password reset",
+            performed_by=request.user,
+            target_user=user,
+            description=f"Temporary password issued for {user.username}.",
+        )
+        return Response(
+            {
+                "message": "Password reset successfully.",
+                "temporary_password": temporary_password,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class AdminSettingsView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def get_object(self):
         obj, _ = SiteSettings.objects.get_or_create(id=1)
@@ -780,7 +1033,7 @@ class AdminSettingsView(APIView):
 
 class AdminLogsView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def get(self, request):
         queryset = AdminLog.objects.select_related("performed_by", "target_user").all()
@@ -828,7 +1081,7 @@ class AdminLogsView(APIView):
 # --------------------------
 class ApprovedIDListView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def get(self, request):
         queryset = ApprovedSchoolID.objects.all().order_by("-id")
@@ -841,7 +1094,7 @@ class ApprovedIDListView(APIView):
 # --------------------------
 class DeleteApprovedIDView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
 
     def delete(self, request, pk):
         try:
@@ -857,7 +1110,7 @@ class DeleteApprovedIDView(APIView):
 # --------------------------
 class UploadApprovedIDsView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSystemAdmin]
     DEFAULT_COLLEGE = "CAS"
 
     def post(self, request):

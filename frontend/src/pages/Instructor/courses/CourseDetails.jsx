@@ -1,23 +1,27 @@
 import React, { Suspense, lazy, useCallback, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { LuBookOpen, LuClipboardCheck, LuUsers } from "react-icons/lu";
-import { authGet, authPut } from "../../../utils/api";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { LuBookOpen, LuUsers } from "react-icons/lu";
+import { authGet, authPost, authPut } from "../../../utils/api";
 import { getDefaultAvatarDataUrl } from "../../../utils/instructorProfile";
+import { getWebSocketBaseUrl } from "../../../utils/runtimeConfig";
 
 const StreamTab = lazy(() => import("../../../components/course/StreamTab"));
 const LessonsTab = lazy(() => import("../../../components/course/LessonsTab"));
 const ClassworkTab = lazy(() => import("../../../components/course/ClassworkTab"));
 const ExamsQuizzesTab = lazy(() => import("../../../components/course/ExamsQuizzesTab"));
+const MeetingsTab = lazy(() => import("../../../components/course/MeetingsTab"));
 const AttendanceTab = lazy(() => import("../../../components/course/AttendanceTab"));
 const CommentsTab = lazy(() => import("../../../components/course/CommentsTab"));
 const GradesTab = lazy(() => import("../../../components/course/GradesTab"));
+const EnrollmentRequestsTab = lazy(() => import("../../../components/course/EnrollmentRequestsTab"));
 const StudentProfile = lazy(() => import("./StudentProfile"));
 
-const TAB_ITEMS = [
+const BASE_TAB_ITEMS = [
   { key: "stream", label: "Stream" },
   { key: "lessons", label: "Lessons" },
   { key: "classwork", label: "Classwork" },
   { key: "exams_quizzes", label: "Exams & Quizzes" },
+  { key: "meetings", label: "Meetings" },
   { key: "attendance", label: "Attendance" },
   { key: "grades", label: "Grades" },
   { key: "people", label: "People" },
@@ -41,6 +45,15 @@ const tabClass = (isActive) =>
       ? "bg-emerald-600 text-white shadow-sm"
       : "bg-white text-emerald-800 hover:bg-emerald-50"
   }`;
+
+const buildCourseSocketUrl = () => {
+  const token = localStorage.getItem("access") || "";
+  const url = new URL(`${getWebSocketBaseUrl()}/ws/notifications/`);
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
+};
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -172,6 +185,11 @@ const renderTabComponent = ({
   selectedStudentId,
   onOpenProfile,
   onBackToPeople,
+  enrollmentRequests,
+  enrollmentRequestsLoading,
+  enrollmentRequestsError,
+  onApproveRequest,
+  onRejectRequest,
   selectedClassworkFromStream,
   setSelectedClassworkFromStream,
   setActiveTab,
@@ -200,6 +218,8 @@ const renderTabComponent = ({
       );
     case "exams_quizzes":
       return <ExamsQuizzesTab courseId={courseId} isInstructor={isInstructor} />;
+    case "meetings":
+      return <MeetingsTab courseId={courseId} isInstructor={isInstructor} />;
     case "attendance":
       return <AttendanceTab courseId={courseId} isInstructor={isInstructor} />;
     case "grades":
@@ -216,6 +236,17 @@ const renderTabComponent = ({
         );
       }
       return <PeopleTab people={people} loading={peopleLoading} error={peopleError} onOpenProfile={onOpenProfile} />;
+    case "enrollment_requests":
+      return (
+        <EnrollmentRequestsTab
+          isInstructor={isInstructor}
+          requests={enrollmentRequests}
+          loading={enrollmentRequestsLoading}
+          error={enrollmentRequestsError}
+          onApprove={onApproveRequest}
+          onReject={onRejectRequest}
+        />
+      );
     case "comments":
       return <CommentsTab courseId={courseId} isInstructor={isInstructor} />;
     default:
@@ -238,7 +269,9 @@ export default function CourseDetails({ currentUser = {} }) {
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [peopleError, setPeopleError] = useState("");
   const [moduleCount, setModuleCount] = useState(null);
-  const [attendanceCount, setAttendanceCount] = useState(null);
+  const [enrollmentRequests, setEnrollmentRequests] = useState([]);
+  const [enrollmentRequestsLoading, setEnrollmentRequestsLoading] = useState(false);
+  const [enrollmentRequestsError, setEnrollmentRequestsError] = useState("");
   const [selectedClassworkFromStream, setSelectedClassworkFromStream] = useState(null);
 
   const role = (currentUser?.role || localStorage.getItem("role") || "").toLowerCase();
@@ -267,15 +300,115 @@ export default function CourseDetails({ currentUser = {} }) {
     fetchCourse();
   }, [fetchCourse]);
 
+  const fetchEnrollmentRequests = useCallback(
+    async (options = {}) => {
+      if (!isInstructor) return [];
+
+      const silent = Boolean(options.silent);
+      if (!silent) {
+        setEnrollmentRequestsLoading(true);
+      }
+      setEnrollmentRequestsError("");
+
+      try {
+        const data = await authGet(`/api/courses/enrollment-requests/?course_id=${courseId}`);
+        const rows = Array.isArray(data) ? data : [];
+        setEnrollmentRequests(rows);
+        setCourse((current) =>
+          current
+            ? {
+                ...current,
+                pending_enrollment_requests_count: rows.length,
+              }
+            : current
+        );
+        return rows;
+      } catch (requestError) {
+        console.error(requestError);
+        setEnrollmentRequestsError("Failed to load enrollment requests.");
+        return [];
+      } finally {
+        if (!silent) {
+          setEnrollmentRequestsLoading(false);
+        }
+      }
+    },
+    [courseId, isInstructor]
+  );
+
+  React.useEffect(() => {
+    if (!isInstructor) return undefined;
+
+    fetchEnrollmentRequests();
+    const intervalId = window.setInterval(() => {
+      fetchEnrollmentRequests({ silent: true });
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [fetchEnrollmentRequests, isInstructor]);
+
+  React.useEffect(() => {
+    if (!isInstructor) return undefined;
+
+    let socket = null;
+    let reconnectTimer = null;
+    let isActive = true;
+
+    const connect = () => {
+      const token = localStorage.getItem("access") || "";
+      if (!token || !isActive) return;
+
+      socket = new WebSocket(buildCourseSocketUrl());
+
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const payloadCourseId = String(payload?.course_id || "");
+          const payloadType = String(payload?.notification_type || "");
+          if (payloadCourseId !== String(courseId)) return;
+
+          if (payloadType === "course_enrollment_request" || payloadType === "course_enrollment") {
+            fetchEnrollmentRequests({ silent: true });
+            if (payloadType === "course_enrollment") {
+              fetchCourse();
+            }
+          }
+        } catch (error) {
+          console.error("Enrollment request socket payload error:", error);
+        }
+      };
+
+      socket.onclose = () => {
+        if (!isActive) return;
+        reconnectTimer = window.setTimeout(connect, 2000);
+      };
+
+      socket.onerror = () => {
+        if (socket) {
+          socket.close();
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      isActive = false;
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+      if (socket) {
+        socket.close();
+      }
+    };
+  }, [courseId, fetchCourse, fetchEnrollmentRequests, isInstructor]);
+
   React.useEffect(() => {
     let isActive = true;
 
     const fetchDashboardCounts = async () => {
       try {
-        const [modulesResponse, attendanceResponse] = await Promise.allSettled([
-          authGet(`/api/courses/${courseId}/modules/`),
-          authGet(`/api/courses/${courseId}/attendance/sessions/`),
-        ]);
+        const [modulesResponse] = await Promise.allSettled([authGet(`/api/courses/${courseId}/modules/`)]);
 
         if (!isActive) return;
 
@@ -284,16 +417,9 @@ export default function CourseDetails({ currentUser = {} }) {
         } else {
           setModuleCount(null);
         }
-
-        if (attendanceResponse.status === "fulfilled") {
-          setAttendanceCount(Array.isArray(attendanceResponse.value) ? attendanceResponse.value.length : 0);
-        } else {
-          setAttendanceCount(null);
-        }
       } catch {
         if (!isActive) return;
         setModuleCount(null);
-        setAttendanceCount(null);
       }
     };
 
@@ -321,10 +447,11 @@ export default function CourseDetails({ currentUser = {} }) {
 
   React.useEffect(() => {
     const normalizedRequestedTab = requestedTabFromQuery === "students" ? "people" : requestedTabFromQuery;
-    if (normalizedRequestedTab && TAB_ITEMS.some((tab) => tab.key === normalizedRequestedTab) && normalizedRequestedTab !== activeTab) {
+    const validTabs = isInstructor ? [...BASE_TAB_ITEMS, { key: "enrollment_requests" }] : BASE_TAB_ITEMS;
+    if (normalizedRequestedTab && validTabs.some((tab) => tab.key === normalizedRequestedTab) && normalizedRequestedTab !== activeTab) {
       setActiveTab(normalizedRequestedTab);
     }
-  }, [activeTab, requestedTabFromQuery]);
+  }, [activeTab, isInstructor, requestedTabFromQuery]);
 
   const fetchPeople = useCallback(async () => {
     setPeopleLoading(true);
@@ -364,13 +491,55 @@ export default function CourseDetails({ currentUser = {} }) {
     navigate(`${location.pathname}?${nextQuery.toString()}`);
   }, [location.pathname, location.search, navigate]);
 
-  const statCards = useMemo(
-    () => [
+  const handleApproveEnrollmentRequest = useCallback(
+    async (requestId) => {
+      await authPost(`/api/courses/enrollment-requests/${requestId}/approve/`, {});
+      setEnrollmentRequests((current) => current.filter((item) => item.id !== requestId));
+      setCourse((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          pending_enrollment_requests_count: Math.max(0, Number(current.pending_enrollment_requests_count || 0) - 1),
+          students_count: Number(current.students_count || 0) + 1,
+        };
+      });
+    },
+    []
+  );
+
+  const handleRejectEnrollmentRequest = useCallback(
+    async (requestId) => {
+      await authPost(`/api/courses/enrollment-requests/${requestId}/reject/`, {});
+      setEnrollmentRequests((current) => current.filter((item) => item.id !== requestId));
+      setCourse((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          pending_enrollment_requests_count: Math.max(0, Number(current.pending_enrollment_requests_count || 0) - 1),
+        };
+      });
+    },
+    []
+  );
+
+  const statCards = useMemo(() => {
+    const cards = [
       { label: "Modules", value: moduleCount ?? course?.modules_count ?? 0, icon: LuBookOpen },
       { label: "Students", value: course?.students_count || 0, icon: LuUsers },
-      { label: "Attendance", value: attendanceCount ?? course?.attendance_sessions_count ?? 0, icon: LuClipboardCheck },
-    ],
-    [attendanceCount, course, moduleCount]
+    ];
+    if (isInstructor) {
+      cards.push({
+        label: "Pending Requests",
+        value: course?.pending_enrollment_requests_count || 0,
+        icon: LuUsers,
+      });
+    }
+    return cards;
+  }, [course, isInstructor, moduleCount]);
+
+  const tabItems = useMemo(
+    () => (isInstructor ? [...BASE_TAB_ITEMS, { key: "enrollment_requests", label: "Enrollment Requests" }] : BASE_TAB_ITEMS),
+    [isInstructor]
   );
 
   if (loading) {
@@ -405,10 +574,18 @@ export default function CourseDetails({ currentUser = {} }) {
 
           {isInstructor && (
             <div className="mt-4 rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-gray-800">
-                  Join Code: <span className="text-emerald-700">{course.join_code || "Not generated"}</span>
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm font-semibold text-gray-800">
+                    Join Code: <span className="text-emerald-700">{course.join_code || "Not generated"}</span>
+                  </p>
+                  <Link
+                    to={`/courses/${courseId}/meetings`}
+                    className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100"
+                  >
+                    Meetings
+                  </Link>
+                </div>
                 <div className="flex gap-2">
                   {course.join_code && (
                     <button
@@ -474,7 +651,7 @@ export default function CourseDetails({ currentUser = {} }) {
 
         <nav className="sticky top-3 z-20 rounded-xl border border-emerald-100 bg-white/95 p-2 shadow-sm backdrop-blur">
           <div className="flex flex-wrap gap-2">
-            {TAB_ITEMS.map((tab) => (
+            {tabItems.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
@@ -510,6 +687,11 @@ export default function CourseDetails({ currentUser = {} }) {
               selectedStudentId,
               onOpenProfile: handleOpenProfile,
               onBackToPeople: handleBackToPeople,
+              enrollmentRequests,
+              enrollmentRequestsLoading,
+              enrollmentRequestsError,
+              onApproveRequest: handleApproveEnrollmentRequest,
+              onRejectRequest: handleRejectEnrollmentRequest,
               selectedClassworkFromStream,
               setSelectedClassworkFromStream,
               setActiveTab,

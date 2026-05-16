@@ -5,8 +5,6 @@ import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import { useTheme } from "../context/ThemeContext";
 import { Upload, Trash2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
-const USERS_URL = "http://127.0.0.1:8000/api/users";
-const API_BASE = `${USERS_URL}`;
 const PAGE_SIZE = 8;
 
 export default function AdminUploadIDs() {
@@ -26,12 +24,6 @@ export default function AdminUploadIDs() {
   const [page, setPage] = useState(1);
   const [confirm, setConfirm] = useState({ open: false, id: null });
 
-  const getAuthHeaders = () => ({
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("access")}`,
-    },
-  });
-
   const setTimedNotice = (type, text, timeout = 4500) => {
     setNotice({ type, text });
     if (timeout > 0) {
@@ -41,7 +33,7 @@ export default function AdminUploadIDs() {
 
   const fetch = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_BASE}/approved-ids/`, getAuthHeaders());
+      const res = await axios.get("/api/users/approved-ids/");
       setItems(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error(error);
@@ -195,7 +187,9 @@ export default function AdminUploadIDs() {
     fd.append("file", file);
 
     try {
-      const res = await axios.post(`${API_BASE}/upload-ids/`, fd, getAuthHeaders());
+      const res = await axios.post("/api/users/upload-ids/", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       const created = res.data?.new_records ?? 0;
       const existing = res.data?.already_existing ?? 0;
       setTimedNotice("success", `Upload complete. Added: ${created}. Already existing: ${existing}.`);
@@ -219,7 +213,7 @@ export default function AdminUploadIDs() {
 
   const confirmDelete = async () => {
     try {
-      await axios.delete(`${API_BASE}/delete-id/${confirm.id}/`, getAuthHeaders());
+      await axios.delete(`/api/users/delete-id/${confirm.id}/`);
       setTimedNotice("success", "Deleted successfully.", 3000);
       fetch();
     } catch {
@@ -390,4 +384,3 @@ export default function AdminUploadIDs() {
     </div>
   );
 }
-

@@ -135,11 +135,11 @@ const Login = () => {
         <div className="mb-7 text-center">
           <img
             src="/OIP (1).jpg"
-            alt="STFI Logo"
+            alt="STCFI Logo"
             className="mx-auto mb-3 h-14 w-14 rounded-full border border-emerald-200/35 bg-white/85 object-cover p-1 shadow-[0_0_25px_rgba(16,185,129,0.3)]"
           />
           <h2 className="text-4xl font-semibold tracking-[0.08em] text-transparent bg-gradient-to-r from-emerald-100 via-emerald-300 to-teal-200 bg-clip-text [text-shadow:0_0_28px_rgba(16,185,129,0.3)]">
-            STFI LMS
+            STCFI LMS
           </h2>
           <p className="mt-1 text-xs uppercase tracking-[0.22em] text-emerald-100/80">{SUBTITLE}</p>
           <p

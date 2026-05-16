@@ -31,6 +31,7 @@ const cardClass =
   "rounded-xl border border-emerald-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md";
 
 const SkeletonCard = () => <div className="h-32 animate-pulse rounded-xl bg-emerald-50" />;
+const SkeletonPanel = ({ className = "h-48" }) => <div className={`animate-pulse rounded-xl bg-emerald-50 ${className}`} />;
 
 const Home = () => {
   const navigate = useNavigate();
@@ -42,47 +43,92 @@ const Home = () => {
   const [profile, setProfile] = useState(() => readCachedInstructorProfile());
   const [upcomingDeadlines, setUpcomingDeadlines] = useState([]);
   const [atRiskPreview, setAtRiskPreview] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingSections, setLoadingSections] = useState({
+    summary: true,
+    analytics: true,
+    previews: true,
+    courses: true,
+  });
 
   const loadDashboard = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [
-        dashboardData,
-        activitiesData,
-        analyticsData,
-        courseList,
-        userData,
-        upcomingRows,
-        atRiskRows,
-      ] = await Promise.all([
-        authGet("/api/instructor/dashboard/").catch(() => ({})),
-        authGet("/api/instructor/recent-submissions/").catch(() => []),
-        authGet("/api/ai/course-analytics/").catch(() => ({ courses: [], summary: {} })),
-        authGet("/api/courses/").catch(() => []),
-        loadInstructorProfile().catch(() => null),
-        authGet("/api/instructor/upcoming-deadlines/").catch(() => []),
-        authGet("/api/ai/at-risk-students/").catch(() => []),
-      ]);
+    setLoadingSections({
+      summary: true,
+      analytics: true,
+      previews: true,
+      courses: true,
+    });
 
-      setStats({
-        total_courses: dashboardData?.total_courses || 0,
-        pending_submissions: dashboardData?.pending_submissions || 0,
-        notifications: dashboardData?.notifications || 0,
+    const summaryRequest = Promise.allSettled([
+      authGet("/api/instructor/dashboard/?refresh=0"),
+      loadInstructorProfile().catch(() => null),
+    ]).then(([dashboardResult, profileResult]) => {
+      if (dashboardResult.status === "fulfilled") {
+        const dashboardData = dashboardResult.value || {};
+        setStats({
+          total_courses: dashboardData?.total_courses || 0,
+          pending_submissions: dashboardData?.pending_submissions || 0,
+          notifications: dashboardData?.notifications || 0,
+        });
+      }
+      if (profileResult.status === "fulfilled") {
+        setProfile(profileResult.value || readCachedInstructorProfile());
+      } else {
+        setProfile(readCachedInstructorProfile());
+      }
+      setLoadingSections((current) => ({ ...current, summary: false }));
+    });
+
+    const analyticsRequest = authGet("/api/ai/course-analytics/?refresh=0&limit=6")
+      .then((analyticsData) => {
+        setCourseAnalytics(Array.isArray(analyticsData?.courses) ? analyticsData.courses : []);
+        setAiSummary({
+          total_students: analyticsData?.summary?.total_students || 0,
+          average_engagement: analyticsData?.summary?.average_engagement || 0,
+        });
+      })
+      .catch(() => {
+        setCourseAnalytics([]);
+        setAiSummary({ total_students: 0, average_engagement: 0 });
+      })
+      .finally(() => {
+        setLoadingSections((current) => ({ ...current, analytics: false }));
       });
-      setRecentActivities(Array.isArray(activitiesData) ? activitiesData : []);
-      setCourseAnalytics(Array.isArray(analyticsData?.courses) ? analyticsData.courses : []);
-      setAiSummary({
-        total_students: analyticsData?.summary?.total_students || 0,
-        average_engagement: analyticsData?.summary?.average_engagement || 0,
+
+    const previewRequest = Promise.allSettled([
+      authGet("/api/instructor/recent-submissions/?limit=8"),
+      authGet("/api/instructor/upcoming-deadlines/"),
+      authGet("/api/ai/at-risk-students/?refresh=0&limit=10"),
+    ]).then(([activitiesResult, deadlinesResult, atRiskResult]) => {
+      setRecentActivities(
+        activitiesResult.status === "fulfilled" && Array.isArray(activitiesResult.value)
+          ? activitiesResult.value
+          : []
+      );
+      setUpcomingDeadlines(
+        deadlinesResult.status === "fulfilled" && Array.isArray(deadlinesResult.value)
+          ? deadlinesResult.value
+          : []
+      );
+      setAtRiskPreview(
+        atRiskResult.status === "fulfilled" && Array.isArray(atRiskResult.value)
+          ? atRiskResult.value.slice(0, 10)
+          : []
+      );
+      setLoadingSections((current) => ({ ...current, previews: false }));
+    });
+
+    const courseListRequest = authGet("/api/courses/")
+      .then((courseList) => {
+        setCourses(Array.isArray(courseList) ? courseList : []);
+      })
+      .catch(() => {
+        setCourses([]);
+      })
+      .finally(() => {
+        setLoadingSections((current) => ({ ...current, courses: false }));
       });
-      setCourses(Array.isArray(courseList) ? courseList : []);
-      setProfile(userData || readCachedInstructorProfile());
-      setUpcomingDeadlines(Array.isArray(upcomingRows) ? upcomingRows : []);
-      setAtRiskPreview((Array.isArray(atRiskRows) ? atRiskRows : []).slice(0, 5));
-    } finally {
-      setLoading(false);
-    }
+
+    await Promise.all([summaryRequest, analyticsRequest, previewRequest, courseListRequest]);
   }, []);
 
   useEffect(() => {
@@ -193,7 +239,7 @@ const Home = () => {
       </header>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {loading
+        {loadingSections.summary || loadingSections.analytics
           ? [...Array(4)].map((_, index) => <SkeletonCard key={index} />)
           : widgetItems.map((item) => {
               const Icon = item.icon;
@@ -228,36 +274,44 @@ const Home = () => {
             <div className="rounded-xl bg-emerald-50 p-4">
               <p className="mb-2 text-sm font-medium text-emerald-800">Submission Activity (7 days)</p>
               <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={enrollmentTrendData}>
-                    <defs>
-                      <linearGradient id="activityFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#0B6B3A" stopOpacity={0.45} />
-                        <stop offset="100%" stopColor="#0B6B3A" stopOpacity={0.05} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
-                    <XAxis dataKey="date" tick={{ fill: "#14532d", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#14532d", fontSize: 11 }} />
-                    <Tooltip />
-                    <Area dataKey="value" stroke="#0B6B3A" fill="url(#activityFill)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {loadingSections.previews ? (
+                  <SkeletonPanel className="h-48" />
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={enrollmentTrendData}>
+                      <defs>
+                        <linearGradient id="activityFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#0B6B3A" stopOpacity={0.45} />
+                          <stop offset="100%" stopColor="#0B6B3A" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
+                      <XAxis dataKey="date" tick={{ fill: "#14532d", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#14532d", fontSize: 11 }} />
+                      <Tooltip />
+                      <Area dataKey="value" stroke="#0B6B3A" fill="url(#activityFill)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
 
             <div className="rounded-xl bg-emerald-50 p-4">
               <p className="mb-2 text-sm font-medium text-emerald-800">Engagement by Course</p>
               <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={courseEngagementData}>
-                    <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
-                    <XAxis dataKey="course" tick={{ fill: "#14532d", fontSize: 10 }} />
-                    <YAxis tick={{ fill: "#14532d", fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="engagement" fill="#0B6B3A" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {loadingSections.analytics ? (
+                  <SkeletonPanel className="h-48" />
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={courseEngagementData}>
+                      <CartesianGrid strokeDasharray="4 4" stroke="#d1fae5" />
+                      <XAxis dataKey="course" tick={{ fill: "#14532d", fontSize: 10 }} />
+                      <YAxis tick={{ fill: "#14532d", fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="engagement" fill="#0B6B3A" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
           </div>
@@ -275,6 +329,7 @@ const Home = () => {
             </button>
             <button
               onClick={() => goToFirstCourse("students")}
+              disabled={loadingSections.courses}
               className="flex w-full items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
             >
               <LuUserPlus className="h-4 w-4" />
@@ -282,6 +337,7 @@ const Home = () => {
             </button>
             <button
               onClick={() => goToFirstCourse("quiz")}
+              disabled={loadingSections.courses}
               className="flex w-full items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
             >
               <LuFilePlus2 className="h-4 w-4" />
@@ -302,7 +358,9 @@ const Home = () => {
             <LuCalendarClock className="h-5 w-5" /> Upcoming Deadlines
           </h3>
           <div className="mt-3 space-y-2">
-            {upcomingDeadlines.length === 0 ? (
+            {loadingSections.previews ? (
+              [...Array(3)].map((_, index) => <SkeletonPanel key={index} className="h-20" />)
+            ) : upcomingDeadlines.length === 0 ? (
               <p className="text-sm text-gray-500">No upcoming deadlines.</p>
             ) : (
               upcomingDeadlines.slice(0, 6).map((row) => (
@@ -321,7 +379,9 @@ const Home = () => {
             <LuTriangleAlert className="h-5 w-5" /> At-Risk Students
           </h3>
           <div className="mt-3 space-y-2">
-            {atRiskPreview.length === 0 ? (
+            {loadingSections.previews ? (
+              [...Array(3)].map((_, index) => <SkeletonPanel key={index} className="h-20" />)
+            ) : atRiskPreview.length === 0 ? (
               <p className="text-sm text-gray-500">No at-risk students detected.</p>
             ) : (
               atRiskPreview.map((row) => (
@@ -343,7 +403,9 @@ const Home = () => {
         <article className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
           <h3 className="text-lg font-semibold text-emerald-900">Course Performance Snapshot</h3>
           <div className="mt-3 space-y-2">
-            {courseAnalytics.length === 0 ? (
+            {loadingSections.analytics ? (
+              [...Array(3)].map((_, index) => <SkeletonPanel key={index} className="h-20" />)
+            ) : courseAnalytics.length === 0 ? (
               <p className="text-sm text-gray-500">No course performance data yet.</p>
             ) : (
               courseAnalytics.slice(0, 5).map((course) => (
@@ -361,7 +423,9 @@ const Home = () => {
       <section className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
         <h3 className="text-lg font-semibold text-emerald-900">Recent Activity Feed</h3>
         <div className="mt-4 space-y-3">
-          {recentActivities.length === 0 ? (
+          {loadingSections.previews ? (
+            [...Array(4)].map((_, index) => <SkeletonPanel key={index} className="h-24" />)
+          ) : recentActivities.length === 0 ? (
             <p className="rounded-xl bg-emerald-50 px-4 py-6 text-center text-sm text-gray-600">No recent activity yet.</p>
           ) : (
             recentActivities.slice(0, 8).map((activity) => (

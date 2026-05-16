@@ -7,16 +7,18 @@ from analytics_ai.models import (
 from analytics_ai.services.feature_builder import build_student_features
 from analytics_ai.services.explainability import generate_student_risk_explanation
 from analytics_ai.services.ml_predictor import get_failure_predictor
-from analytics_ai.services.risk_engine import calculate_risk_score
+from analytics_ai.services.risk_engine import calculate_risk_score, classify_risk, get_risk_settings
 from users_app.models import Course
 
 
 def compute_student_analytics(student, course):
     features = build_student_features(student, course)
+    risk_settings = get_risk_settings()
     risk_score, risk_level = calculate_risk_score(
         average_grade=features["average_grade"],
         late_rate=features["late_rate"],
         missing_rate=features["missing_rate"],
+        settings=risk_settings,
     )
     prediction_source = "rule"
     probability_student_fails = risk_score
@@ -25,17 +27,19 @@ def compute_student_analytics(student, course):
     try:
         prediction = predictor.predict(features)
         probability_student_fails = float(prediction["risk_probability"])
-        risk_level = prediction["risk_level"]
         risk_score = probability_student_fails
         prediction_source = prediction.get("prediction_source", "ml")
     except Exception:
         # Keep the existing rule output as fallback if ML model is unavailable.
         prediction_source = "rule"
 
+    risk_level = classify_risk(probability_student_fails, risk_settings)
     prediction_context = {
+        "failure_probability": probability_student_fails,
         "risk_probability": probability_student_fails,
         "risk_level": risk_level,
         "prediction_source": prediction_source,
+        "passing_grade": risk_settings["passing_grade"],
     }
     risk_explanation = generate_student_risk_explanation(features, prediction_context)
 

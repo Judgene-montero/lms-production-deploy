@@ -1,6 +1,8 @@
 # models.py/user models for the users_app
 from django.contrib.auth.models import AbstractUser, UserManager
 from django.db import models
+from django.utils import timezone
+from datetime import datetime
 import string
 import secrets
 
@@ -106,12 +108,32 @@ def generate_join_code(length=7):
     characters = string.ascii_uppercase + string.digits
     return ''.join(secrets.choice(characters) for _ in range(length))
 
+
+def current_local_date():
+    return timezone.localdate()
+
+
+def current_local_time():
+    return timezone.localtime().time().replace(microsecond=0)
+
+
+class Category(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
 class Course(models.Model):
     instructor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="courses")
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    category = models.CharField(max_length=100, blank=True)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="courses", null=True, blank=True)
     thumbnail = models.ImageField(upload_to="course_thumbnails/", blank=True, null=True)
+    start_date = models.DateField(default=current_local_date)
+    start_time = models.TimeField(default=current_local_time)
 
     students = models.ManyToManyField(
         User,
@@ -125,14 +147,30 @@ class Course(models.Model):
 
     join_code = models.CharField(max_length=10, unique=True, blank=True)
     join_code_enabled = models.BooleanField(default=True)
+    join_code_expiration = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
+        if not self.start_date:
+            self.start_date = current_local_date()
+        if not self.start_time:
+            self.start_time = current_local_time()
         if not self.join_code:
             code = generate_join_code()
             while Course.objects.filter(join_code=code).exists():
                 code = generate_join_code()
             self.join_code = code
         super().save(*args, **kwargs)
+
+    def get_start_datetime(self):
+        combined = datetime.combine(self.start_date, self.start_time)
+        return timezone.make_aware(combined, timezone.get_current_timezone())
+
+    def get_status(self, reference_time=None):
+        if self.is_archived:
+            return "archived"
+
+        reference_time = reference_time or timezone.now()
+        return "scheduled" if self.get_start_datetime() > reference_time else "active"
 
     def students_count(self):
         return self.students.count()
@@ -158,9 +196,48 @@ class Submission(models.Model):
 
 
 class Notification(models.Model):
-    instructor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="triggered_notifications",
+    )
+    course = models.ForeignKey(
+        "users_app.Course",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+    activity = models.ForeignKey(
+        "courses.CourseActivity",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+    submission = models.ForeignKey(
+        "courses.ActivitySubmission",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+    event_key = models.CharField(max_length=255, db_index=True)
+    title = models.CharField(max_length=160, blank=True, default="")
     message = models.CharField(max_length=300)
+    notification_type = models.CharField(max_length=50, default="general")
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["recipient", "event_key"], name="unique_recipient_event_key"),
+        ]
 
     def __str__(self):
         return f"{self.message[:40]}"
@@ -197,6 +274,10 @@ class SiteSettings(models.Model):
     allow_username_change = models.BooleanField(default=True)
     default_user_role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
     analytics_polling_interval = models.PositiveIntegerField(default=10)
+    analytics_low_risk_max = models.FloatField(default=0.30)
+    analytics_medium_risk_max = models.FloatField(default=0.60)
+    analytics_high_risk_min = models.FloatField(default=0.60)
+    analytics_passing_grade = models.FloatField(default=75.0)
     max_login_attempts = models.PositiveIntegerField(default=5)
     updated_at = models.DateTimeField(auto_now=True)
 

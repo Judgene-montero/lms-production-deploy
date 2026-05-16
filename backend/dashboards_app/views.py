@@ -5,12 +5,21 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
-from django.db.models import Avg
+from django.db.models import Avg, Count, Q
+from django.db.models.functions import TruncDate
 
-from users_app.models import User, Course, Submission, Notification
+from users_app.models import AdminLog, User, Course, Submission, Notification
 from users_app.serializers import SidebarLinkSerializer, CourseSerializer, SubmissionSerializer, NotificationSerializer
-from courses.models import CourseActivity, ActivitySubmission, QuizAttempt
+from courses.models import CourseActivity, ActivitySubmission, InstructorFeedback, QuizAttempt
 from analytics_ai.models import StudentAnalytics
+from analytics_ai.services.risk_engine import get_risk_settings
+
+
+def _safe_course_analytics(course):
+    try:
+        return course.course_analytics
+    except Exception:
+        return None
 
 
 # --------------------------
@@ -108,7 +117,7 @@ class InstructorNotificationsAPIView(APIView):
         if user.role != "instructor":
             return Response({"error": "Unauthorized"}, status=403)
 
-        qs = Notification.objects.filter(instructor=user).order_by("-created_at")
+        qs = Notification.objects.filter(recipient=user).order_by("-created_at")
         serializer = NotificationSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -455,3 +464,174 @@ class InstructorStudentInsightsAPIView(APIView):
                 "timeline": timeline,
             }
         )
+
+
+class AdminDashboardOverviewAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if getattr(request.user, "role", "") != "admin" and not getattr(request.user, "is_staff", False):
+            return Response({"error": "Unauthorized"}, status=403)
+
+        payload = {
+            "summary": {
+                "users": {
+                    "total": 0,
+                    "students": 0,
+                    "instructors": 0,
+                    "admins": 0,
+                    "active": 0,
+                    "inactive": 0,
+                    "pending_instructors": 0,
+                },
+                "courses": {
+                    "total": 0,
+                    "active": 0,
+                    "archived": 0,
+                },
+                "ai_settings": get_risk_settings(),
+            },
+            "at_risk_overview": {"high": 0, "medium": 0, "low": 0},
+            "course_performance": [],
+            "instructor_performance": [],
+            "engagement_trends": [],
+            "recent_logs": [],
+            "at_risk_students": [],
+        }
+
+        try:
+            payload["summary"]["users"] = {
+                "total": User.objects.count(),
+                "students": User.objects.filter(role="student").count(),
+                "instructors": User.objects.filter(role="instructor").count(),
+                "admins": User.objects.filter(role="admin").count(),
+                "active": User.objects.filter(is_active=True).count(),
+                "inactive": User.objects.filter(is_active=False).count(),
+                "pending_instructors": User.objects.filter(role="instructor", is_email_verified=True, is_active=False).count(),
+            }
+            course_rows = Course.objects.select_related("instructor", "category").order_by("-id")
+            payload["summary"]["courses"] = {
+                "total": course_rows.count(),
+                "active": Course.objects.filter(is_archived=False).count(),
+                "archived": Course.objects.filter(is_archived=True).count(),
+            }
+        except Exception:
+            logger.exception("Admin overview summary failed.")
+            course_rows = Course.objects.none()
+
+        try:
+            risk_rows = StudentAnalytics.objects.select_related("student", "course").order_by("-risk_score", "student__last_name")
+            payload["at_risk_overview"] = {
+                "high": risk_rows.filter(risk_level="high").count(),
+                "medium": risk_rows.filter(risk_level="medium").count(),
+                "low": risk_rows.filter(risk_level="low").count(),
+            }
+            payload["at_risk_students"] = [
+                {
+                    "id": row.id,
+                    "student_name": f"{row.student.first_name} {row.student.last_name}".strip() or row.student.username,
+                    "course_title": row.course.title,
+                    "risk_level": row.risk_level,
+                    "risk_score": round(float(row.risk_score or 0.0), 4),
+                    "average_grade": round(float(row.average_grade or 0.0), 2),
+                    "engagement_score": round(float(row.engagement_score or 0.0), 2),
+                }
+                for row in risk_rows[:10]
+            ]
+        except Exception:
+            logger.exception("Admin overview risk section failed.")
+            risk_rows = StudentAnalytics.objects.none()
+
+        try:
+            for course in course_rows[:12]:
+                analytics = _safe_course_analytics(course)
+                payload["course_performance"].append(
+                    {
+                        "course_id": course.id,
+                        "course_title": course.title,
+                        "instructor_name": f"{course.instructor.first_name} {course.instructor.last_name}".strip() or course.instructor.username,
+                        "category": getattr(course.category, "name", None),
+                        "students_count": course.students.count(),
+                        "average_grade": round(float(getattr(analytics, "average_grade", 0.0) or 0.0), 2),
+                        "average_engagement": round(float(getattr(analytics, "average_engagement", 0.0) or 0.0), 2),
+                        "high_risk_students": int(getattr(analytics, "high_risk_students", 0) or 0),
+                        "status": course.get_status(),
+                    }
+                )
+        except Exception:
+            logger.exception("Admin overview course performance failed.")
+
+        try:
+            instructor_performance = []
+            instructors = User.objects.filter(role="instructor").order_by("last_name", "first_name")[:30]
+            for instructor in instructors:
+                instructor_courses = list(Course.objects.filter(instructor=instructor).prefetch_related("students"))
+                course_analytics_rows = [_safe_course_analytics(course) for course in instructor_courses]
+                course_analytics_rows = [row for row in course_analytics_rows if row is not None]
+                feedback_qs = InstructorFeedback.objects.filter(course__instructor=instructor)
+
+                average_grade = 0.0
+                average_engagement = 0.0
+                if course_analytics_rows:
+                    average_grade = sum(float(row.average_grade or 0.0) for row in course_analytics_rows) / len(course_analytics_rows)
+                    average_engagement = sum(float(row.average_engagement or 0.0) for row in course_analytics_rows) / len(course_analytics_rows)
+
+                instructor_performance.append(
+                    {
+                        "instructor_id": instructor.id,
+                        "name": f"{instructor.first_name} {instructor.last_name}".strip() or instructor.username,
+                        "courses_total": len(instructor_courses),
+                        "students_total": User.objects.filter(enrolled_courses__instructor=instructor, role="student").distinct().count(),
+                        "average_grade": round(float(average_grade), 2),
+                        "average_engagement": round(float(average_engagement), 2),
+                        "high_risk_total": StudentAnalytics.objects.filter(course__instructor=instructor, risk_level="high").count(),
+                        "feedback_average": round(float(feedback_qs.aggregate(avg=Avg("rating")).get("avg") or 0.0), 2),
+                    }
+                )
+
+            instructor_performance.sort(key=lambda row: (-int(row["courses_total"]), row["name"].lower()))
+            payload["instructor_performance"] = instructor_performance[:12]
+        except Exception:
+            logger.exception("Admin overview instructor performance failed.")
+
+        try:
+            engagement_trends_qs = (
+                ActivitySubmission.objects.filter(submitted_at__isnull=False)
+                .annotate(day=TruncDate("submitted_at"))
+                .values("day")
+                .annotate(submissions=Count("id"))
+                .order_by("day")
+            )
+            login_trends_qs = (
+                AdminLog.objects.filter(action="User login")
+                .annotate(day=TruncDate("timestamp"))
+                .values("day")
+                .annotate(logins=Count("id"))
+                .order_by("day")
+            )
+            engagement_map = {item["day"]: {"date": item["day"], "submissions": item["submissions"], "logins": 0} for item in engagement_trends_qs}
+            for item in login_trends_qs:
+                row = engagement_map.setdefault(item["day"], {"date": item["day"], "submissions": 0, "logins": 0})
+                row["logins"] = item["logins"]
+            payload["engagement_trends"] = [engagement_map[key] for key in sorted(engagement_map.keys())][-14:]
+        except Exception:
+            logger.exception("Admin overview engagement trends failed.")
+
+        try:
+            recent_logs = AdminLog.objects.select_related("performed_by", "target_user").order_by("-timestamp")[:15]
+            payload["recent_logs"] = [
+                {
+                    "id": log.id,
+                    "action": log.action,
+                    "description": log.description,
+                    "timestamp": log.timestamp,
+                    "performed_by": getattr(log.performed_by, "username", None),
+                    "target_user": getattr(log.target_user, "username", None),
+                }
+                for log in recent_logs
+            ]
+        except Exception:
+            logger.exception("Admin overview logs failed.")
+
+        return Response(payload)

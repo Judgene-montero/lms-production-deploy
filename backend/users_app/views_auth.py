@@ -3,6 +3,7 @@ from django.db.models import Q
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
+from .views import create_admin_log
 
 User = get_user_model()
 
@@ -53,6 +54,12 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise AuthenticationFailed("Account inactive. Please verify your email.")
 
         data = super().validate({"username": user.username, "password": password})
+        create_admin_log(
+            action="User login",
+            performed_by=user,
+            target_user=user,
+            description=f"Successful login for {user.username}.",
+        )
         return data
 
 

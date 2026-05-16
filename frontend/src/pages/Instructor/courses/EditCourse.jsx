@@ -1,4 +1,3 @@
-// src/pages/Instructor/courses/EditCourse.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "../../../utils/axiosInstance";
@@ -7,61 +6,71 @@ const EditCourse = () => {
   const navigate = useNavigate();
   const { courseId } = useParams();
 
-  // Form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [categories, setCategories] = useState([]);
   const [thumbnail, setThumbnail] = useState(null);
   const [thumbnailPreview, setThumbnailPreview] = useState(null);
-
-  // UI state
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Fetch course data
-  const fetchCourse = async () => {
-    setFetching(true);
-
-    try {
-      const res = await axios.get(`/api/courses/${courseId}/`);
-
-      const course = res.data;
-
-      setTitle(course.title);
-      setDescription(course.description);
-      setCategory(course.category || "");
-      setThumbnailPreview(course.thumbnail);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to load course.");
-    }
-
-    setFetching(false);
-  };
-
-  // Fetch data on mount
   useEffect(() => {
-    fetchCourse();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let isMounted = true;
 
-  // Handle thumbnail preview
-  const handleThumbnailChange = (e) => {
-    const file = e.target.files[0];
+    const loadPageData = async () => {
+      setFetching(true);
+      setError("");
+
+      try {
+        const [courseResponse, categoriesResponse] = await Promise.all([
+          axios.get(`/api/courses/${courseId}/`),
+          axios.get("/api/categories/"),
+        ]);
+
+        if (!isMounted) return;
+
+        const course = courseResponse.data;
+        setTitle(course.title || "");
+        setDescription(course.description || "");
+        setCategoryId(course.category?.id ? String(course.category.id) : "");
+        setThumbnailPreview(course.thumbnail || null);
+        setCategories(Array.isArray(categoriesResponse.data) ? categoriesResponse.data : []);
+      } catch (requestError) {
+        console.error(requestError);
+        if (isMounted) {
+          setError("Failed to load course.");
+        }
+      } finally {
+        if (isMounted) {
+          setFetching(false);
+        }
+      }
+    };
+
+    loadPageData();
+    return () => {
+      isMounted = false;
+    };
+  }, [courseId]);
+
+  const handleThumbnailChange = (event) => {
+    const file = event.target.files?.[0] || null;
     setThumbnail(file);
 
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setThumbnailPreview(reader.result);
-      reader.readAsDataURL(file);
+    if (!file) {
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onloadend = () => setThumbnailPreview(reader.result);
+    reader.readAsDataURL(file);
   };
 
-  // Submit update
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
     setError("");
     setSuccess("");
@@ -72,13 +81,21 @@ const EditCourse = () => {
       return;
     }
 
+    if (!categoryId) {
+      setError("Category is required.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const formData = new FormData();
-      formData.append("title", title);
-      formData.append("description", description);
-      formData.append("category", category);
+      formData.append("title", title.trim());
+      formData.append("description", description.trim());
+      formData.append("category_id", categoryId);
 
-      if (thumbnail) formData.append("thumbnail", thumbnail);
+      if (thumbnail) {
+        formData.append("thumbnail", thumbnail);
+      }
 
       await axios.put(`/api/courses/${courseId}/`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -86,12 +103,12 @@ const EditCourse = () => {
 
       setSuccess("Course updated successfully!");
       setTimeout(() => navigate("/instructor-dashboard/courses"), 1000);
-    } catch (err) {
-      console.error(err);
+    } catch (requestError) {
+      console.error(requestError);
       setError("Failed to update course.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   if (fetching) return <p className="p-6">Loading course...</p>;
@@ -109,7 +126,7 @@ const EditCourse = () => {
           <input
             type="text"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(event) => setTitle(event.target.value)}
             className="w-full border px-3 py-2 rounded"
           />
         </div>
@@ -118,7 +135,7 @@ const EditCourse = () => {
           <label className="block font-medium mb-1">Description</label>
           <textarea
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(event) => setDescription(event.target.value)}
             className="w-full border px-3 py-2 rounded"
             rows={4}
           />
@@ -126,12 +143,19 @@ const EditCourse = () => {
 
         <div>
           <label className="block font-medium mb-1">Category</label>
-          <input
-            type="text"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
+          <select
+            value={categoryId}
+            onChange={(event) => setCategoryId(event.target.value)}
             className="w-full border px-3 py-2 rounded"
-          />
+            required
+          >
+            <option value="">Select a category</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
@@ -165,4 +189,3 @@ const EditCourse = () => {
 };
 
 export default EditCourse;
-

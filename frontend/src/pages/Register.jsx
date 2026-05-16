@@ -2,8 +2,6 @@ import React, { useState } from "react";
 import axios from "../utils/axiosInstance";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 
-const API_BASE = "http://127.0.0.1:8000/api/users";
-
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 export default function Register() {
@@ -57,7 +55,7 @@ export default function Register() {
         role: form.role === "instructor" ? "instructor" : "student",
       };
 
-      const res = await axios.post(`${API_BASE}/register/`, payload);
+      const res = await axios.post("/api/users/register/", payload);
       setSuccess(res.data?.message || "Registration successful. Please verify your email.");
     } catch (err) {
       setError(err.response?.data?.error || "Registration failed.");

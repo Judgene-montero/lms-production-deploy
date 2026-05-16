@@ -1,26 +1,64 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "../../../utils/axiosInstance";
 
 const initialForm = {
   title: "",
   description: "",
-  category: "",
-  level: "beginner",
-  visibility: "private",
+  categoryId: "",
+  scheduleManually: false,
+  startDate: "",
+  startTime: "",
   thumbnail: null,
 };
 
 const CreateCourse = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState(initialForm);
+  const [categories, setCategories] = useState([]);
   const [thumbnailPreview, setThumbnailPreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCategories = async () => {
+      setCategoriesLoading(true);
+      try {
+        const response = await axios.get("/api/categories/");
+        if (!isMounted) return;
+        setCategories(Array.isArray(response.data) ? response.data : []);
+      } catch (requestError) {
+        console.error(requestError);
+        if (!isMounted) return;
+        setError("Failed to load categories.");
+      } finally {
+        if (isMounted) {
+          setCategoriesLoading(false);
+        }
+      }
+    };
+
+    loadCategories();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleManualScheduleToggle = (checked) => {
+    setForm((prev) => ({
+      ...prev,
+      scheduleManually: checked,
+      startDate: checked ? prev.startDate : "",
+      startTime: checked ? prev.startTime : "",
+    }));
   };
 
   const handleThumbnailChange = (event) => {
@@ -37,25 +75,6 @@ const CreateCourse = () => {
     reader.readAsDataURL(file);
   };
 
-  const submitCourse = async (includeExtendedFields = true) => {
-    const payload = new FormData();
-    payload.append("title", form.title.trim());
-    payload.append("description", form.description);
-    if (form.category.trim()) payload.append("category", form.category.trim());
-    if (form.thumbnail) payload.append("thumbnail", form.thumbnail);
-
-    if (includeExtendedFields) {
-      payload.append("level", form.level);
-      payload.append("visibility", form.visibility);
-    }
-
-    return axios.post("/api/courses/", payload, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     setLoading(true);
@@ -68,26 +87,51 @@ const CreateCourse = () => {
       return;
     }
 
+    if (!form.categoryId) {
+      setError("Category is required.");
+      setLoading(false);
+      return;
+    }
+
+    if (form.scheduleManually && (!form.startDate || !form.startTime)) {
+      setError("Start date and start time are required when manual scheduling is enabled.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      await submitCourse(true);
+      const payload = new FormData();
+      payload.append("title", form.title.trim());
+      payload.append("description", form.description.trim());
+      payload.append("category_id", form.categoryId);
+
+      if (form.scheduleManually) {
+        payload.append("start_date", form.startDate);
+        payload.append("start_time", form.startTime);
+      }
+
+      if (form.thumbnail) {
+        payload.append("thumbnail", form.thumbnail);
+      }
+
+      await axios.post("/api/courses/", payload, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
       setSuccess("Course created successfully!");
       setTimeout(() => navigate("/instructor-dashboard/courses"), 900);
-    } catch (err) {
-      if (err.response?.status === 400) {
-        try {
-          await submitCourse(false);
-          setSuccess("Course created successfully!");
-          setTimeout(() => navigate("/instructor-dashboard/courses"), 900);
-          return;
-        } catch (fallbackErr) {
-          console.error(fallbackErr);
-        }
-      }
-      setError(
-        err.response?.data?.message ||
-          err.response?.data?.detail ||
-          "Failed to create course. Please try again."
-      );
+    } catch (requestError) {
+      console.error(requestError);
+      const responseData = requestError.response?.data;
+      const apiError =
+        responseData?.category_id?.[0] ||
+        responseData?.non_field_errors?.[0] ||
+        responseData?.detail ||
+        responseData?.error;
+
+      setError(apiError || "Failed to create course. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -98,7 +142,7 @@ const CreateCourse = () => {
       <div className="mx-auto max-w-4xl space-y-6">
         <header className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-white via-emerald-50 to-lime-50 p-6 shadow-sm">
           <h1 className="text-2xl font-bold text-emerald-950 sm:text-3xl">Create Course</h1>
-          <p className="mt-2 text-sm text-gray-600">Set up course details, visibility, and cover thumbnail.</p>
+          <p className="mt-2 text-sm text-gray-600">Set up category, scheduling, and a course thumbnail before publishing.</p>
         </header>
 
         <form onSubmit={handleSubmit} className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm sm:p-8">
@@ -111,7 +155,7 @@ const CreateCourse = () => {
               <input
                 type="text"
                 value={form.title}
-                onChange={(e) => handleField("title", e.target.value)}
+                onChange={(event) => handleField("title", event.target.value)}
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 placeholder="Introduction to Data Science"
                 required
@@ -122,7 +166,7 @@ const CreateCourse = () => {
               <label className="mb-1 block text-sm font-semibold text-emerald-900">Description</label>
               <textarea
                 value={form.description}
-                onChange={(e) => handleField("description", e.target.value)}
+                onChange={(event) => handleField("description", event.target.value)}
                 rows={4}
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 placeholder="Describe your course goals and outcomes..."
@@ -131,39 +175,59 @@ const CreateCourse = () => {
 
             <div>
               <label className="mb-1 block text-sm font-semibold text-emerald-900">Category</label>
-              <input
-                type="text"
-                value={form.category}
-                onChange={(e) => handleField("category", e.target.value)}
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                placeholder="Computer Science"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-semibold text-emerald-900">Level</label>
               <select
-                value={form.level}
-                onChange={(e) => handleField("level", e.target.value)}
+                value={form.categoryId}
+                onChange={(event) => handleField("categoryId", event.target.value)}
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                disabled={categoriesLoading}
+                required
               >
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
+                <option value="">{categoriesLoading ? "Loading categories..." : "Select a category"}</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
               </select>
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-semibold text-emerald-900">Visibility</label>
-              <select
-                value={form.visibility}
-                onChange={(e) => handleField("visibility", e.target.value)}
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-              >
-                <option value="private">Private</option>
-                <option value="public">Public</option>
-              </select>
+            <div className="flex items-end">
+              <label className="flex w-full items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-950">
+                <input
+                  type="checkbox"
+                  checked={form.scheduleManually}
+                  onChange={(event) => handleManualScheduleToggle(event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                Schedule course manually
+              </label>
             </div>
+
+            {form.scheduleManually && (
+              <>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-emerald-900">Start Date</label>
+                  <input
+                    type="date"
+                    value={form.startDate}
+                    onChange={(event) => handleField("startDate", event.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-emerald-900">Start Time</label>
+                  <input
+                    type="time"
+                    value={form.startTime}
+                    onChange={(event) => handleField("startTime", event.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    required
+                  />
+                </div>
+              </>
+            )}
 
             <div>
               <label className="mb-1 block text-sm font-semibold text-emerald-900">Thumbnail Upload</label>
@@ -176,12 +240,16 @@ const CreateCourse = () => {
             </div>
 
             <div>
-              {thumbnailPreview && (
+              {thumbnailPreview ? (
                 <img
                   src={thumbnailPreview}
                   alt="Thumbnail preview"
                   className="h-28 w-full rounded-xl border border-emerald-100 object-cover"
                 />
+              ) : (
+                <div className="flex h-28 items-center justify-center rounded-xl border border-dashed border-emerald-100 bg-emerald-50/40 text-sm text-gray-500">
+                  Preview appears here
+                </div>
               )}
             </div>
           </div>
@@ -196,7 +264,7 @@ const CreateCourse = () => {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || categoriesLoading}
               className="rounded-xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-70"
             >
               {loading ? "Creating..." : "Create Course"}
@@ -209,4 +277,3 @@ const CreateCourse = () => {
 };
 
 export default CreateCourse;
-
