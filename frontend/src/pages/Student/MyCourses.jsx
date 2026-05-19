@@ -23,7 +23,7 @@ const getProgressLabel = (progress) => {
 };
 
 const pageCardClass =
-  "rounded-[28px] border border-emerald-100/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(240,253,250,0.88),rgba(248,250,252,0.98))] shadow-[0_20px_48px_rgba(15,23,42,0.05)]";
+  "rounded-[28px] border border-slate-200 bg-white shadow-sm md:border-emerald-100/80 md:bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(240,253,250,0.88),rgba(248,250,252,0.98))] md:shadow-[0_20px_48px_rgba(15,23,42,0.05)]";
 
 const getStatusTone = (progress) => {
   if (progress >= 100) return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -117,9 +117,19 @@ export default function MyCourses() {
 
     setJoining(true);
     try {
-      await axios.post("/api/courses/join/", { code: joinCode });
-      setMessage("Enrollment request sent. Please wait for instructor approval.");
-      setJoinCode("");
+      const response = await axios.post("/api/courses/join/", { code: joinCode });
+      const nextMessage =
+        response?.data?.message || "Enrollment request sent. Waiting for instructor approval.";
+      setMessage(nextMessage);
+      if (response?.status === 201) {
+        setJoinCode("");
+      }
+      if (
+        nextMessage.toLowerCase().includes("already enrolled") ||
+        nextMessage.toLowerCase().includes("approved")
+      ) {
+        fetchCourses();
+      }
     } catch (err) {
       setMessage(
         err.response?.data?.error ||
@@ -135,7 +145,8 @@ export default function MyCourses() {
   const messageToneClass =
     normalizedMessage.includes("request sent") ||
     normalizedMessage.includes("already enrolled") ||
-    normalizedMessage.includes("pending approval")
+    normalizedMessage.includes("pending approval") ||
+    normalizedMessage.includes("pending request")
       ? "border-green-200 bg-green-50 text-green-700"
       : "border-red-200 bg-red-50 text-red-700";
 
@@ -143,7 +154,7 @@ export default function MyCourses() {
   const completedCoursesCount = courses.filter((c) => Number(courseMeta[c.id]?.completionPct ?? c.progress ?? c.completion_rate ?? 0) >= 100).length;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(20,184,166,0.10),_transparent_24%),linear-gradient(180deg,_#f8fafc_0%,_#ffffff_26%,_#f8fafc_100%)] px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 px-3 py-5 sm:px-4 sm:py-6 md:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(20,184,166,0.10),_transparent_24%),linear-gradient(180deg,_#f8fafc_0%,_#ffffff_26%,_#f8fafc_100%)] md:px-6 md:py-8 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className={`${pageCardClass} overflow-hidden p-6 sm:p-8`}>
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -176,9 +187,9 @@ export default function MyCourses() {
           </div>
         </header>
 
-        <section className={`${pageCardClass} p-5 sm:p-6`}>
+        <section className={`${pageCardClass} overflow-hidden p-4 sm:p-5 md:p-6`}>
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl">
+            <div className="max-w-2xl min-w-0">
               <div className="flex items-center gap-3">
                 <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/80 bg-white text-emerald-700 shadow-sm">
                   <LuDoorOpen className="h-5 w-5" />
@@ -190,7 +201,7 @@ export default function MyCourses() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] lg:min-w-[420px]">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] lg:min-w-[420px]">
               <label htmlFor="join-code" className="sr-only">
                 Enter Join Code
               </label>
@@ -200,11 +211,11 @@ export default function MyCourses() {
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value)}
                 placeholder="Enter Join Code"
-                className="w-full rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                className="w-full min-w-0 rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
               />
               <button
                 onClick={handleJoinCourse}
-                className="rounded-2xl bg-[linear-gradient(135deg,#059669,#0f766e)] px-5 py-3 text-sm font-medium text-white shadow-[0_12px_26px_rgba(5,150,105,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_30px_rgba(5,150,105,0.28)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white shadow-sm transition md:bg-[linear-gradient(135deg,#059669,#0f766e)] md:shadow-[0_12px_26px_rgba(5,150,105,0.22)] md:hover:-translate-y-0.5 md:hover:shadow-[0_16px_30px_rgba(5,150,105,0.28)] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!joinCode.trim() || joining}
               >
                 {joining ? "Sending..." : "Join Course"}

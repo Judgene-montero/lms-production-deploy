@@ -6719,7 +6719,7 @@ def join_course(request):
         student=request.user,
         status=EnrollmentRequest.STATUS_PENDING,
     ).exists():
-        return Response({"message": "Enrollment request already pending approval."}, status=200)
+        return Response({"message": "You already have a pending request for this course."}, status=200)
 
     enrollment_request = EnrollmentRequest.objects.create(
         course=course,
