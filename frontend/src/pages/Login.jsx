@@ -112,7 +112,7 @@ const Login = () => {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#062b22] px-4 py-10">
+    <div className="relative flex min-h-[100svh] items-start justify-center overflow-hidden bg-[#062b22] px-3 py-6 sm:min-h-screen sm:items-center sm:px-4 sm:py-10">
       <video
         className="absolute inset-0 h-full w-full object-cover"
         autoPlay
@@ -130,7 +130,7 @@ const Login = () => {
 
       <form
         onSubmit={handleSubmit}
-        className="relative z-10 w-full max-w-md rounded-[28px] border border-white/20 bg-white/10 p-8 shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+        className="relative z-10 max-h-[calc(100svh-1.5rem)] w-full max-w-md overflow-y-auto rounded-[24px] border border-white/20 bg-white/10 p-5 shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:max-h-[calc(100vh-3rem)] sm:rounded-[28px] sm:p-8"
       >
         <div className="mb-7 text-center">
           <img
@@ -138,7 +138,7 @@ const Login = () => {
             alt="STCFI Logo"
             className="mx-auto mb-3 h-14 w-14 rounded-full border border-emerald-200/35 bg-white/85 object-cover p-1 shadow-[0_0_25px_rgba(16,185,129,0.3)]"
           />
-          <h2 className="text-4xl font-semibold tracking-[0.08em] text-transparent bg-gradient-to-r from-emerald-100 via-emerald-300 to-teal-200 bg-clip-text [text-shadow:0_0_28px_rgba(16,185,129,0.3)]">
+          <h2 className="bg-gradient-to-r from-emerald-100 via-emerald-300 to-teal-200 bg-clip-text text-3xl font-semibold tracking-[0.08em] text-transparent [text-shadow:0_0_28px_rgba(16,185,129,0.3)] sm:text-4xl">
             STCFI LMS
           </h2>
           <p className="mt-1 text-xs uppercase tracking-[0.22em] text-emerald-100/80">{SUBTITLE}</p>
@@ -170,7 +170,7 @@ const Login = () => {
             placeholder="Enter your username or email"
             value={formData.username}
             onChange={handleChange}
-            className="w-full rounded-xl border border-white/25 bg-white/90 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-200/70"
+            className="w-full min-w-0 rounded-xl border border-white/25 bg-white/90 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-200/70"
             required
           />
         </label>
@@ -185,7 +185,7 @@ const Login = () => {
             placeholder="Enter your password"
             value={formData.password}
             onChange={handleChange}
-            className="w-full rounded-xl border border-white/25 bg-white/90 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-200/70"
+            className="w-full min-w-0 rounded-xl border border-white/25 bg-white/90 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-200/70"
             required
           />
         </label>

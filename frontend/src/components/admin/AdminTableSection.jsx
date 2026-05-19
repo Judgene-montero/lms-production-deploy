@@ -3,8 +3,8 @@ import React from "react";
 export default function AdminTableSection({ columns, rows, emptyText = "No records found.", renderRow }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[880px] text-sm">
+      <div className="responsive-scroll">
+        <table className="w-full min-w-[720px] text-sm sm:min-w-[820px]">
           <thead className="bg-slate-50">
             <tr>
               {columns.map((column) => (

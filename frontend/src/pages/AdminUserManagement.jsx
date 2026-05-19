@@ -231,7 +231,7 @@ export default function AdminUserManagement() {
         </div>
       ) : null}
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_420px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,420px)]">
         <AdminPanel
           title="System Users"
           eyebrow="Accounts"
@@ -279,7 +279,7 @@ export default function AdminUserManagement() {
             <>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 <p>{selectedUserIds.length} user(s) selected.</p>
-                <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={toggleVisibleSelection}
@@ -402,7 +402,7 @@ export default function AdminUserManagement() {
                 )}
               />
 
-              <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+              <div className="mt-4 flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
                 <p>
                   Showing {paginatedUsers.length} of {filteredUsers.length} users
                 </p>
@@ -473,7 +473,7 @@ export default function AdminUserManagement() {
 
       {activityModal.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">User Activity</p>

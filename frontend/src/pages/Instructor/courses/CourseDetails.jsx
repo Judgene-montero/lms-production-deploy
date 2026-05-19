@@ -157,7 +157,7 @@ function PeopleTab({ people, loading, error, onOpenProfile }) {
               </div>
             </div>
 
-            <div className="w-full rounded-lg border border-emerald-100 bg-emerald-50/40 p-3 sm:w-[360px]">
+            <div className="w-full max-w-full rounded-lg border border-emerald-100 bg-emerald-50/40 p-3 sm:w-[360px]">
               <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
                 Student Activity Summary
               </p>
@@ -586,7 +586,7 @@ export default function CourseDetails({ currentUser = {} }) {
                     Meetings
                   </Link>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {course.join_code && (
                     <button
                       type="button"
@@ -650,7 +650,8 @@ export default function CourseDetails({ currentUser = {} }) {
         </section>
 
         <nav className="sticky top-3 z-20 rounded-xl border border-emerald-100 bg-white/95 p-2 shadow-sm backdrop-blur">
-          <div className="flex flex-wrap gap-2">
+          <div className="responsive-scroll">
+            <div className="flex gap-2 pb-1">
             {tabItems.map((tab) => (
               <button
                 key={tab.key}
@@ -672,6 +673,7 @@ export default function CourseDetails({ currentUser = {} }) {
                 {tab.label}
               </button>
             ))}
+            </div>
           </div>
         </nav>
 

@@ -77,7 +77,7 @@ const StudentDashboard = () => {
   }, []);
 
   const rightSidebar = (
-    <aside className="sticky top-6 h-[calc(100vh-4rem)] space-y-6 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-6 shadow-md">
+    <aside className="space-y-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-md lg:sticky lg:top-6 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto lg:p-6">
       {loading ? (
         <SidebarSkeleton />
       ) : (

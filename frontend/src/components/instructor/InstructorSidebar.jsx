@@ -25,10 +25,17 @@ const isActiveRoute = (pathname, path) => {
   return pathname === path || pathname.startsWith(`${path}/`);
 };
 
-const InstructorSidebar = ({ profile = {} }) => {
+const InstructorSidebar = ({
+  profile = {},
+  mobile = false,
+  onCloseMobile,
+  onNavigate,
+  forceExpanded = false,
+}) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(true);
+  const expanded = forceExpanded || (!mobile && isOpen);
 
   const handleLogout = () => {
     localStorage.removeItem("access_token");
@@ -38,15 +45,20 @@ const InstructorSidebar = ({ profile = {} }) => {
     navigate("/login");
   };
 
+  const handleNavClick = () => {
+    onNavigate?.();
+    onCloseMobile?.();
+  };
+
   return (
     <aside
-      className={`flex min-h-screen flex-col justify-between border-r border-emerald-100 bg-white px-3 py-4 shadow-sm transition-all duration-300 ${
-        isOpen ? "w-64" : "w-[84px]"
+      className={`flex h-full min-h-screen flex-col justify-between border-r border-emerald-100 bg-white px-3 py-4 shadow-sm transition-all duration-300 ${
+        mobile ? "w-[min(84vw,20rem)]" : expanded ? "w-64" : "w-[84px]"
       }`}
     >
       <div>
         <div className="mb-6 flex items-center justify-between rounded-xl bg-gradient-to-r from-emerald-50 to-lime-50 p-3">
-          {isOpen ? (
+          {expanded ? (
             <div className="flex items-center gap-3">
               <img
                 src={resolveInstructorAvatar(profile) || getDefaultAvatarDataUrl(profile)}
@@ -66,7 +78,7 @@ const InstructorSidebar = ({ profile = {} }) => {
             />
           )}
 
-          {isOpen && (
+          {expanded && !mobile && (
             <button
               onClick={() => setIsOpen(false)}
               className="rounded-lg p-1.5 text-emerald-700 transition hover:bg-emerald-100"
@@ -77,7 +89,7 @@ const InstructorSidebar = ({ profile = {} }) => {
           )}
         </div>
 
-        {!isOpen && (
+        {!expanded && !mobile && (
           <button
             onClick={() => setIsOpen(true)}
             className="mx-auto mb-6 flex rounded-lg p-2 text-emerald-700 transition hover:bg-emerald-100"
@@ -96,6 +108,7 @@ const InstructorSidebar = ({ profile = {} }) => {
               <Link
                 to={item.path}
                 key={item.path}
+                onClick={handleNavClick}
                 className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   active
                     ? "bg-emerald-600 text-white shadow-sm"
@@ -104,7 +117,7 @@ const InstructorSidebar = ({ profile = {} }) => {
               >
                 <span className="flex items-center gap-3">
                   <Icon className="h-5 w-5" />
-                  {isOpen && <span>{item.name}</span>}
+                  {expanded && <span>{item.name}</span>}
                 </span>
 
               </Link>
@@ -118,7 +131,7 @@ const InstructorSidebar = ({ profile = {} }) => {
         className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
       >
         <LuLogOut className="h-5 w-5" />
-        {isOpen && <span>Logout</span>}
+        {expanded && <span>Logout</span>}
       </button>
     </aside>
   );

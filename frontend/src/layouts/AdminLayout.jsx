@@ -31,6 +31,7 @@ export default function AdminLayout() {
                 collapsed={false}
                 onToggle={() => {}}
                 onCloseMobile={() => setMobileOpen(false)}
+                mobile
               />
             </div>
             <button
@@ -42,7 +43,7 @@ export default function AdminLayout() {
           </div>
         )}
 
-        <main className="flex-1 overflow-x-hidden p-4 sm:p-6">
+        <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

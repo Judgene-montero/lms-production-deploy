@@ -65,7 +65,7 @@ export default function Register() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#062b22] p-4">
+    <div className="relative flex min-h-[100svh] items-start justify-center overflow-hidden bg-[#062b22] p-3 sm:min-h-screen sm:items-center sm:p-4">
       <video
         className="absolute inset-0 h-full w-full object-cover"
         autoPlay
@@ -81,7 +81,7 @@ export default function Register() {
       <div className="absolute -left-10 top-10 h-40 w-40 rounded-full bg-emerald-300/20 blur-3xl" />
       <div className="absolute bottom-6 right-0 h-52 w-52 rounded-full bg-emerald-200/10 blur-3xl" />
 
-      <div className="relative z-10 w-full max-w-xl rounded-[28px] border border-white/20 bg-white/10 p-6 shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8">
+      <div className="relative z-10 max-h-[calc(100svh-1.5rem)] w-full max-w-xl overflow-y-auto rounded-[24px] border border-white/20 bg-white/10 p-4 shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:max-h-[calc(100vh-3rem)] sm:rounded-[28px] sm:p-8">
         <div className="mb-6 text-center">
           <h2 className="text-3xl font-semibold tracking-tight text-white">Create Account</h2>
           <p className="mt-2 text-sm text-emerald-100/85">Register to access your learning dashboard</p>
@@ -157,7 +157,7 @@ export default function Register() {
             <label className="mb-2 block text-xs font-medium uppercase tracking-[0.12em] text-emerald-100/80">
               Role
             </label>
-            <div className="flex items-center gap-5 rounded-xl border border-white/25 bg-white/90 px-4 py-3">
+            <div className="flex flex-col items-start gap-3 rounded-xl border border-white/25 bg-white/90 px-4 py-3 sm:flex-row sm:items-center sm:gap-5">
               <label className="inline-flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="radio"

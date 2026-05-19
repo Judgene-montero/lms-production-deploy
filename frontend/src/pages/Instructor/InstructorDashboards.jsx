@@ -32,7 +32,7 @@ const InstructorDashboard = () => {
   }, []);
 
   const rightSidebar = (
-    <div className="sticky top-6 space-y-4">
+    <div className="space-y-4 lg:sticky lg:top-6">
       <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50 to-lime-50 p-4 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Account</p>
         <div className="mt-3">

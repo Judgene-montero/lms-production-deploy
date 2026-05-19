@@ -17,7 +17,12 @@ import {
   subscribeStudentProfile,
 } from "../../utils/studentProfile";
 
-export default function StudentSidebar() {
+export default function StudentSidebar({
+  mobile = false,
+  onCloseMobile,
+  onNavigate,
+  forceExpanded = false,
+}) {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(true);
   const [profile, setProfile] = useState(() => readCachedStudentProfile());
@@ -63,17 +68,23 @@ export default function StudentSidebar() {
   };
 
   const displayName = profile?.name || profile?.full_name || profile?.username || "Student";
+  const expanded = forceExpanded || (!mobile && isOpen);
+
+  const handleNavClick = () => {
+    onNavigate?.();
+    onCloseMobile?.();
+  };
 
   return (
     <aside
-      className={`flex min-h-screen flex-col justify-between border-r border-emerald-100 bg-white px-3 py-4 shadow-sm transition-all duration-300 ${
-        isOpen ? "w-64" : "w-[84px]"
+      className={`flex h-full min-h-screen flex-col justify-between border-r border-emerald-100 bg-white px-3 py-4 shadow-sm transition-all duration-300 ${
+        mobile ? "w-[min(84vw,20rem)]" : expanded ? "w-64" : "w-[84px]"
       }`}
     >
       <div>
         <div className="mb-5 rounded-xl bg-gradient-to-r from-emerald-50 to-lime-50 p-3">
           <div className="flex items-center justify-between gap-2">
-            {isOpen ? (
+            {expanded ? (
               <div className="flex items-center gap-3">
                 <img
                   src={resolveStudentAvatar(profile) || getDefaultStudentAvatarDataUrl(profile || {})}
@@ -93,7 +104,7 @@ export default function StudentSidebar() {
               />
             )}
 
-            {isOpen && (
+            {expanded && !mobile && (
               <button
                 onClick={() => setIsOpen(false)}
                 className="rounded-lg p-1.5 text-emerald-700 transition hover:bg-emerald-100"
@@ -105,7 +116,7 @@ export default function StudentSidebar() {
           </div>
         </div>
 
-        {!isOpen && (
+        {!expanded && !mobile && (
           <button
             onClick={() => setIsOpen(true)}
             className="mx-auto mb-5 flex rounded-lg p-2 text-emerald-700 transition hover:bg-emerald-100"
@@ -120,6 +131,7 @@ export default function StudentSidebar() {
             <NavLink
               key={link.path}
               to={link.path}
+              onClick={handleNavClick}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
@@ -129,7 +141,7 @@ export default function StudentSidebar() {
               }
             >
               {link.icon}
-              {isOpen && <span>{link.name}</span>}
+              {expanded && <span>{link.name}</span>}
             </NavLink>
           ))}
         </nav>
@@ -140,7 +152,7 @@ export default function StudentSidebar() {
         className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
       >
         <LuLogOut className="h-5 w-5" />
-        {isOpen && <span>Logout</span>}
+        {expanded && <span>Logout</span>}
       </button>
     </aside>
   );

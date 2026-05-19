@@ -42,7 +42,7 @@ const sections = [
   },
 ];
 
-export default function AdminSidebar({ collapsed, onToggle, onCloseMobile }) {
+export default function AdminSidebar({ collapsed, onToggle, onCloseMobile, mobile = false }) {
   const navigate = useNavigate();
 
   const logout = () => {
@@ -54,28 +54,30 @@ export default function AdminSidebar({ collapsed, onToggle, onCloseMobile }) {
 
   return (
     <aside
-      className={`flex h-full flex-col border-r border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 ${
-        collapsed ? "w-20" : "w-72"
+      className={`flex h-full min-h-screen flex-col border-r border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 ${
+        mobile ? "w-[min(86vw,20rem)]" : collapsed ? "w-20" : "w-72"
       } transition-all duration-200`}
     >
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <div className="rounded-lg bg-blue-600 p-2 text-white">A</div>
-          {!collapsed && <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Admin Console</span>}
+          {(!collapsed || mobile) && <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Admin Console</span>}
         </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="rounded p-1 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-        >
-          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-        </button>
+        {!mobile ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="rounded p-1 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+        ) : null}
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto p-3">
         {sections.map((section) => (
           <div key={section.title}>
-            {!collapsed && <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{section.title}</p>}
+            {(!collapsed || mobile) && <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{section.title}</p>}
             <div className="space-y-1">
               {section.items.map((item) => {
                 const Icon = item.icon;
@@ -92,9 +94,9 @@ export default function AdminSidebar({ collapsed, onToggle, onCloseMobile }) {
                           : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
                       }`
                     }
-                  >
-                    <Icon size={18} />
-                    {!collapsed && <span>{item.name}</span>}
+                    >
+                      <Icon size={18} />
+                    {(!collapsed || mobile) && <span>{item.name}</span>}
                   </NavLink>
                 );
               })}
@@ -110,7 +112,7 @@ export default function AdminSidebar({ collapsed, onToggle, onCloseMobile }) {
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
         >
           <LogOut size={18} />
-          {!collapsed && "Logout"}
+          {(!collapsed || mobile) && "Logout"}
         </button>
       </div>
     </aside>

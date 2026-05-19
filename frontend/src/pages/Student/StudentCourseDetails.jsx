@@ -56,7 +56,7 @@ const statCardClass =
   "rounded-[26px] border border-emerald-100/80 bg-[linear-gradient(145deg,rgba(255,255,255,1),rgba(240,253,250,0.96),rgba(248,250,252,0.98))] p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)] ring-1 ring-white/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-[0_22px_48px_rgba(16,185,129,0.10)]";
 
 const tabClass = (isActive) =>
-  `group flex min-w-[148px] items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-all duration-200 ${
+  `group flex min-w-[138px] items-center gap-3 rounded-2xl border px-3 py-3 text-left text-sm font-medium transition-all duration-200 sm:min-w-[148px] sm:px-4 ${
     isActive
       ? "border-emerald-500/60 bg-[linear-gradient(135deg,rgba(5,150,105,0.98),rgba(13,148,136,0.98))] text-white shadow-[0_16px_36px_rgba(5,150,105,0.22)]"
       : "border-transparent bg-white/88 text-slate-700 shadow-sm hover:-translate-y-0.5 hover:border-emerald-100 hover:bg-[linear-gradient(135deg,rgba(255,255,255,1),rgba(236,253,245,0.9))] hover:text-emerald-900 hover:shadow-md"
@@ -1267,7 +1267,7 @@ export default function StudentCourseDetails() {
                 </Link>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:min-w-[240px]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:min-w-[240px]">
               <div className="rounded-2xl border border-white/80 bg-white/78 p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Completion</p>
                 <p className="mt-2 text-2xl font-semibold text-slate-900">{courseProgress.toFixed(0)}%</p>
@@ -1296,7 +1296,8 @@ export default function StudentCourseDetails() {
         </section>
 
         <nav className="sticky top-3 z-20 rounded-[26px] border border-emerald-100/80 bg-white/92 p-2 shadow-[0_16px_40px_rgba(15,23,42,0.05)] backdrop-blur-md">
-          <div className="flex flex-wrap gap-2">
+          <div className="responsive-scroll">
+            <div className="flex gap-2 pb-1">
             {TAB_ITEMS.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -1335,6 +1336,7 @@ export default function StudentCourseDetails() {
               </button>
             );
             })}
+            </div>
           </div>
         </nav>
 
