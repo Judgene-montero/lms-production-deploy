@@ -7,7 +7,7 @@ export default function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState({
-    require_email_verification: true,
+    require_email_verification: false,
     allow_instructor_self_registration: true,
     allow_username_change: true,
     default_user_role: "student",
@@ -84,14 +84,9 @@ export default function AdminSettings() {
         <div className="space-y-6">
           <AdminPanel title="Authentication and Registration" eyebrow="Access Rules">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form.require_email_verification)}
-                  onChange={(event) => setForm((prev) => ({ ...prev, require_email_verification: event.target.checked }))}
-                />
-                Require email verification
-              </label>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Email verification is currently disabled. Student accounts can log in immediately, and instructor accounts are gated by admin approval instead.
+              </div>
               <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
                 <input
                   type="checkbox"

@@ -99,8 +99,8 @@ const Login = () => {
       const message = err?.message || "Login failed.";
       if (message.toLowerCase().includes("pending")) {
         setError("Instructor account is waiting for admin approval.");
-      } else if (message.toLowerCase().includes("verify")) {
-        setError("Account inactive. Please verify your email first.");
+      } else if (message.toLowerCase().includes("not approved") || message.toLowerCase().includes("rejected")) {
+        setError("Instructor account was not approved. Please contact an administrator.");
       } else if (message.toLowerCase().includes("invalid")) {
         setError("Invalid username/email or password.");
       } else {

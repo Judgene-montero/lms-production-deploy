@@ -1,7 +1,7 @@
 # users_app/views.py
-import pandas as pd
 import logging
 import secrets
+import pandas as pd
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -12,9 +12,6 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
-from django.core import signing
-from django.core.mail import send_mail
-from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Count, Q
@@ -81,9 +78,16 @@ def _is_instructor_or_admin(user):
 
 
 def _user_status_label(user):
-    if not getattr(user, "is_active", False):
-        if getattr(user, "role", "") == "instructor" and getattr(user, "is_email_verified", False):
+    if getattr(user, "role", "") == "instructor":
+        approval_status = getattr(user, "approval_status", "pending")
+        if approval_status == "pending":
             return "pending"
+        if approval_status == "rejected":
+            return "rejected"
+        if not getattr(user, "is_active", False):
+            return "inactive"
+        return "active"
+    if not getattr(user, "is_active", False):
         return "inactive"
     return "active"
 
@@ -234,6 +238,7 @@ class UserProfileView(APIView):
             "middle_initial": getattr(user, "middle_initial", ""),
             "last_name": getattr(user, "last_name", ""),
             "role": role,  # now supports "student", "instructor", or "admin"
+            "approval_status": getattr(user, "approval_status", "not_required"),
             "school_id": getattr(user, "school_id", ""),
             "college": getattr(user, "college", ""),
             "is_verified_school_user": getattr(user, "is_verified_school_user", False),
@@ -634,23 +639,23 @@ def register_user(request):
     if User.objects.filter(email__iexact=email).exists():
         return Response({"error": "Email already registered"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # NOTE: Student auto-activation is only for local testing.
-    # Remove or modify before deploying to production.
     is_student = role == "student"
-    is_debug = bool(getattr(settings, "DEBUG", False))
+    settings_obj, _ = SiteSettings.objects.get_or_create(id=1)
+
+    if role == "instructor" and not settings_obj.allow_instructor_self_registration:
+        return Response(
+            {"error": "Instructor self-registration is currently disabled."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     if is_student:
         is_active = True
         is_email_verified = True
+        approval_status = "not_required"
     else:
-        if is_debug:
-            # Local testing: allow instructor login even without email
-            is_active = True
-            is_email_verified = True
-        else:
-            # Production: require email verification + admin approval
-            is_active = False
-            is_email_verified = False
+        is_active = False
+        is_email_verified = True
+        approval_status = "pending"
 
     user = User.objects.create(
         username=username,
@@ -658,58 +663,21 @@ def register_user(request):
         last_name=last_name,
         email=email,
         role=role,
+        approval_status=approval_status,
         is_active=is_active,
         is_email_verified=is_email_verified,
         profile_complete=False,
         password=make_password(password),
     )
 
-    response = {"role": role}
+    response = {
+        "role": role,
+        "approval_status": approval_status,
+    }
     if is_student:
-        response["message"] = "Registration successful. Student account activated for local testing."
+        response["message"] = "Registration successful. You can log in now."
     else:
-        token = signing.dumps({"uid": user.id})
-        verify_url = f"http://localhost:8000/api/users/verify-email/{token}/"
-
-        # Production flow: require email verification first.
-        if not is_debug:
-            try:
-                send_mail(
-                    subject="Verify your LMS instructor account",
-                    message=f"Welcome to LMS. Verify your instructor account: {verify_url}",
-                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@lms.local"),
-                    recipient_list=[email],
-                    fail_silently=False,
-                )
-            except Exception:
-                # SMTP may be unavailable in local testing/staging.
-                pass
-
-            # New placement: no email sending in DEBUG mode, but still provide verification URL in response for testing.
-            if email:
-                try:
-                    send_mail(
-                        subject="Verify your LMS instructor account",
-                        message=f"Welcome to LMS. Verify your instructor account: {verify_url}",
-                        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@lms.local"),
-                        recipient_list=[email],
-                        fail_silently=False,
-                    )
-                except Exception:
-                    pass
-
-            logger.info(
-                "Instructor verification link generated for local visibility.",
-                extra={"user_id": user.id, "username": user.username},
-            )
-            response["message"] = "Registration successful. Please verify your email, then wait for admin approval."
-        else:
-            response["message"] = (
-                "Registration successful. Instructor email verification is bypassed in local DEBUG mode; "
-                "account is awaiting admin approval."
-            )
-            response["verification_token"] = token
-            response["verification_url"] = verify_url
+        response["message"] = "Your instructor account is pending admin approval."
 
     return Response(response, status=status.HTTP_201_CREATED)
 
@@ -717,25 +685,12 @@ def register_user(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def verify_email(request, token):
-    try:
-        payload = signing.loads(token, max_age=60 * 60 * 24 * 3)
-        user = User.objects.get(id=payload.get("uid"))
-    except Exception:
-        return Response({"error": "Invalid or expired verification token."}, status=status.HTTP_400_BAD_REQUEST)
-
-    user.is_email_verified = True
-    if user.role == "student":
-        user.is_active = True
-    else:
-        user.is_active = False
-    user.save(update_fields=["is_email_verified", "is_active"])
-
-    if user.role == "instructor":
-        msg = "Email verified. Your instructor account is awaiting admin approval."
-    else:
-        msg = "Email verified. Your account is now active."
-
-    return Response({"message": msg}, status=status.HTTP_200_OK)
+    return Response(
+        {
+            "message": "Email verification is currently disabled. Students can log in immediately. Instructors must wait for admin approval."
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 # --------------------------
@@ -748,8 +703,8 @@ class PendingInstructorApprovalsView(APIView):
     def get(self, request):
         pending = User.objects.filter(
             role="instructor",
-            is_email_verified=True,
-            is_active=False
+            approval_status="pending",
+            is_active=False,
         ).order_by("-date_joined")
 
         rows = [
@@ -760,6 +715,7 @@ class PendingInstructorApprovalsView(APIView):
                 "last_name": u.last_name,
                 "email": u.email,
                 "date_joined": u.date_joined,
+                "approval_status": u.approval_status,
             }
             for u in pending
         ]
@@ -776,21 +732,10 @@ class ApproveInstructorView(APIView):
         except User.DoesNotExist:
             return Response({"error": "Instructor not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if not user.is_email_verified:
-            return Response(
-                {"error": "Instructor must verify email before admin approval."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        # New line to bypass if email is empty:
-        if user.email and not user.is_email_verified:
-            return Response(
-                {"error": "Instructor must verify email before admin approval."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-
         user.is_active = True
-        user.save(update_fields=["is_active"])
+        user.is_email_verified = True
+        user.approval_status = "approved"
+        user.save(update_fields=["is_active", "is_email_verified", "approval_status"])
         create_admin_log(
             action="Instructor approved",
             performed_by=request.user,
@@ -798,6 +743,29 @@ class ApproveInstructorView(APIView):
             description=f"Approved instructor account for {user.username}.",
         )
         return Response({"message": "Instructor account approved."}, status=status.HTTP_200_OK)
+
+
+class RejectInstructorView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsSystemAdmin]
+
+    def post(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id, role="instructor")
+        except User.DoesNotExist:
+            return Response({"error": "Instructor not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        user.is_active = False
+        user.is_email_verified = True
+        user.approval_status = "rejected"
+        user.save(update_fields=["is_active", "is_email_verified", "approval_status"])
+        create_admin_log(
+            action="Instructor rejected",
+            performed_by=request.user,
+            target_user=user,
+            description=f"Rejected instructor account for {user.username}.",
+        )
+        return Response({"message": "Instructor account rejected."}, status=status.HTTP_200_OK)
 
 
 class AdminUserListView(APIView):
@@ -828,6 +796,7 @@ class AdminUserListView(APIView):
                 "middle_initial": u.middle_initial,
                 "last_name": u.last_name,
                 "role": u.role,
+                "approval_status": getattr(u, "approval_status", "not_required"),
                 "school_id": u.school_id,
                 "college": u.college,
                 "is_email_verified": bool(getattr(u, "is_email_verified", False)),
@@ -869,6 +838,7 @@ class AdminUserDetailView(APIView):
                 "last_name": user.last_name,
                 "middle_initial": user.middle_initial,
                 "role": user.role,
+                "approval_status": getattr(user, "approval_status", "not_required"),
                 "school_id": user.school_id,
                 "college": user.college,
                 "is_email_verified": bool(getattr(user, "is_email_verified", False)),
@@ -896,10 +866,23 @@ class AdminUserDetailView(APIView):
                 action_notes.append("active status updated")
             if "status" in data:
                 next_status = str(data.get("status")).strip().lower()
-                if next_status in {"active", "inactive", "pending"}:
-                    user.is_active = next_status == "active"
-                    if next_status == "pending" and user.role == "instructor":
+                if next_status in {"active", "inactive", "pending", "rejected"}:
+                    if user.role == "instructor":
+                        if next_status == "active":
+                            user.approval_status = "approved"
+                            user.is_active = True
+                        elif next_status == "pending":
+                            user.approval_status = "pending"
+                            user.is_active = False
+                        elif next_status == "rejected":
+                            user.approval_status = "rejected"
+                            user.is_active = False
+                        else:
+                            user.approval_status = "approved"
+                            user.is_active = False
                         user.is_email_verified = True
+                    else:
+                        user.is_active = next_status == "active"
                     action_notes.append(f"status set to {next_status}")
             if "college" in data:
                 user.college = str(data.get("college", "")).strip() or None
@@ -908,8 +891,13 @@ class AdminUserDetailView(APIView):
                 next_role = str(data.get("role", "")).strip().lower()
                 if next_role in {"student", "instructor"} and next_role != user.role:
                     user.role = next_role
-                    if next_role == "instructor" and settings_obj.require_email_verification and not user.is_email_verified:
-                        user.is_active = False
+                    if next_role == "instructor":
+                        user.approval_status = "approved"
+                        user.is_active = True
+                        user.is_email_verified = True
+                    else:
+                        user.approval_status = "not_required"
+                        user.is_email_verified = True
                     action_notes.append(f"role changed to {next_role}")
             if "is_email_verified" in data:
                 user.is_email_verified = bool(data.get("is_email_verified"))

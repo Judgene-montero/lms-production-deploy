@@ -20,6 +20,7 @@ export default function Register() {
     confirm_password: "",
     role: "student",
   });
+  const isInstructor = form.role === "instructor";
 
   const validate = () => {
     if (!form.first_name.trim()) return "First name is required.";
@@ -56,7 +57,12 @@ export default function Register() {
       };
 
       const res = await axios.post("/api/users/register/", payload);
-      setSuccess(res.data?.message || "Registration successful. Please verify your email.");
+      setSuccess(
+        res.data?.message ||
+          (isInstructor
+            ? "Your instructor account is pending admin approval."
+            : "Registration successful. You can log in now.")
+      );
     } catch (err) {
       setError(err.response?.data?.error || "Registration failed.");
     } finally {
@@ -86,6 +92,12 @@ export default function Register() {
           <h2 className="text-3xl font-semibold tracking-tight text-white">Create Account</h2>
           <p className="mt-2 text-sm text-emerald-100/85">Register to access your learning dashboard</p>
         </div>
+
+        {isInstructor && (
+          <div className="mb-4 rounded-xl border border-amber-200/30 bg-amber-500/20 px-3 py-2 text-sm text-amber-50">
+            Instructor accounts require admin approval before login.
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-xl border border-red-200/30 bg-red-500/20 px-3 py-2 text-sm text-red-100">

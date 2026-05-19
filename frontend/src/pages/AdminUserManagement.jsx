@@ -332,6 +332,8 @@ export default function AdminUserManagement() {
                           ? "bg-emerald-100 text-emerald-700"
                           : user.status === "pending"
                           ? "bg-amber-100 text-amber-700"
+                          : user.status === "rejected"
+                          ? "bg-rose-100 text-rose-700"
                           : "bg-rose-100 text-rose-700"
                       }`}>
                         {user.status}

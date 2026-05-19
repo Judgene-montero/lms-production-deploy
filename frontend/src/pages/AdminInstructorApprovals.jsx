@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "../utils/axiosInstance";
-import { RefreshCw, UserCheck } from "lucide-react";
+import { RefreshCw, UserCheck, UserX } from "lucide-react";
 
 export default function AdminInstructorApprovals() {
   const [rows, setRows] = useState([]);
@@ -11,28 +11,11 @@ export default function AdminInstructorApprovals() {
     setLoading(true);
     setNotice("");
     try {
-      const allUsersRes = await axios.get("/api/users/admin/users/");
-      const allUsers = Array.isArray(allUsersRes.data) ? allUsersRes.data : [];
-      const pending = allUsers.filter(
-        (u) =>
-          (u.role || "").toLowerCase() === "instructor" &&
-          u.is_email_verified === true &&
-          u.is_active === false
-      );
-      setRows(pending);
+      const res = await axios.get("/api/users/admin/pending-instructors/");
+      setRows(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      // Fallback for compatibility if /admin/users/ is unavailable.
-      try {
-        const res = await axios.get("/api/users/admin/pending-instructors/");
-        setRows(Array.isArray(res.data) ? res.data : []);
-      } catch (fallbackErr) {
-        setRows([]);
-        setNotice(
-          fallbackErr.response?.data?.error ||
-            err.response?.data?.error ||
-            "Failed to load pending instructors."
-        );
-      }
+      setRows([]);
+      setNotice(err.response?.data?.error || "Failed to load pending instructors.");
     } finally {
       setLoading(false);
     }
@@ -49,6 +32,16 @@ export default function AdminInstructorApprovals() {
       fetchPending();
     } catch (err) {
       setNotice(err.response?.data?.error || "Failed to approve instructor.");
+    }
+  };
+
+  const reject = async (id) => {
+    try {
+      await axios.post(`/api/users/admin/instructor-reject/${id}/`, {});
+      setNotice("Instructor rejected.");
+      fetchPending();
+    } catch (err) {
+      setNotice(err.response?.data?.error || "Failed to reject instructor.");
     }
   };
 
@@ -99,13 +92,22 @@ export default function AdminInstructorApprovals() {
                   <td className="px-3 py-3">{row.email}</td>
                   <td className="px-3 py-3">{new Date(row.date_joined).toLocaleString()}</td>
                   <td className="px-3 py-3">
-                    <button
-                      type="button"
-                      onClick={() => approve(row.id)}
-                      className="inline-flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-xs text-white"
-                    >
-                      <UserCheck size={13} /> Approve Instructor
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => approve(row.id)}
+                        className="inline-flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-xs text-white"
+                      >
+                        <UserCheck size={13} /> Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => reject(row.id)}
+                        className="inline-flex items-center gap-1 rounded border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700"
+                      >
+                        <UserX size={13} /> Reject
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))

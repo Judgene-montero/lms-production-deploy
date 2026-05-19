@@ -35,23 +35,27 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             if getattr(user, "role", "") != "admin":
                 user.role = "admin"
                 fields_to_update.append("role")
+            if getattr(user, "approval_status", "") != "not_required":
+                user.approval_status = "not_required"
+                fields_to_update.append("approval_status")
             if not getattr(user, "is_email_verified", False):
                 user.is_email_verified = True
                 fields_to_update.append("is_email_verified")
             if fields_to_update:
                 user.save(update_fields=fields_to_update)
 
-        if not user.is_active:
-            if user.role == "instructor":
+        if user.role == "instructor":
+            approval_status = getattr(user, "approval_status", "pending")
+            if approval_status == "rejected":
+                raise AuthenticationFailed("Instructor account was not approved. Please contact an administrator.")
+            if approval_status == "pending" or not user.is_active:
                 raise AuthenticationFailed("Instructor account is waiting for admin approval.")
+        elif not user.is_active:
             raise AuthenticationFailed("Account is inactive.")
 
         if is_admin_account:
             data = super().validate({"username": user.username, "password": password})
             return data
-
-        if not getattr(user, "is_email_verified", False):
-            raise AuthenticationFailed("Account inactive. Please verify your email.")
 
         data = super().validate({"username": user.username, "password": password})
         create_admin_log(

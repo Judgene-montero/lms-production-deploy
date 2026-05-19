@@ -14,6 +14,14 @@ class CustomUserManager(UserManager):
             extra_fields.setdefault("is_staff", True)
             extra_fields.setdefault("is_active", True)
             extra_fields.setdefault("is_email_verified", True)
+            extra_fields.setdefault("approval_status", "not_required")
+        elif role == "instructor":
+            extra_fields.setdefault(
+                "approval_status",
+                "approved" if extra_fields.get("is_active", True) else "pending",
+            )
+        else:
+            extra_fields.setdefault("approval_status", "not_required")
         return super().create_user(username, email=email, password=password, **extra_fields)
 
     def create_superuser(self, username, email=None, password=None, **extra_fields):
@@ -22,6 +30,7 @@ class CustomUserManager(UserManager):
         extra_fields.setdefault("is_active", True)
         extra_fields.setdefault("role", "admin")
         extra_fields.setdefault("is_email_verified", True)
+        extra_fields.setdefault("approval_status", "not_required")
         return super().create_superuser(username, email=email, password=password, **extra_fields)
 
 
@@ -31,6 +40,12 @@ class User(AbstractUser):
         ('student', 'Student'),
         ('instructor', 'Instructor'),
         ('admin', 'Admin'),
+    ]
+    APPROVAL_STATUS_CHOICES = [
+        ("not_required", "Not Required"),
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
     ]
     
     COLLEGE_CHOICES = [
@@ -44,6 +59,11 @@ class User(AbstractUser):
 
     school_id = models.CharField(max_length=20, unique=True, null=True, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
+    approval_status = models.CharField(
+        max_length=20,
+        choices=APPROVAL_STATUS_CHOICES,
+        default="not_required",
+    )
     college = models.CharField(max_length=10, choices=COLLEGE_CHOICES, null=True, blank=True)
     is_verified_school_user = models.BooleanField(default=False)
     is_email_verified = models.BooleanField(default=False)
@@ -269,7 +289,7 @@ class SiteSettings(models.Model):
         ("instructor", "Instructor"),
     ]
 
-    require_email_verification = models.BooleanField(default=True)
+    require_email_verification = models.BooleanField(default=False)
     allow_instructor_self_registration = models.BooleanField(default=True)
     allow_username_change = models.BooleanField(default=True)
     default_user_role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
