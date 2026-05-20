@@ -11,6 +11,7 @@ from django.db.models.functions import TruncDate
 from users_app.models import AdminLog, User, Course, Submission, Notification
 from users_app.serializers import SidebarLinkSerializer, CourseSerializer, SubmissionSerializer, NotificationSerializer
 from courses.models import CourseActivity, ActivitySubmission, InstructorFeedback, QuizAttempt
+from courses.serializers import CourseSerializer as EnrolledCourseSerializer
 from analytics_ai.models import StudentAnalytics
 from analytics_ai.services.risk_engine import get_risk_settings
 
@@ -203,21 +204,20 @@ class StudentDashboardAPIView(APIView):
 # ✅ STUDENT MY COURSES
 # =========================================
 class StudentCoursesAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        courses = Course.objects.filter(students=request.user)
+        if request.user.role != "student":
+            return Response({"error": "Unauthorized"}, status=403)
 
-        return Response([
-            {
-                "id": c.id,
-                "title": c.title,
-                "description": c.description,
-                "category": c.category,
-                "students": c.students.count(),
-            }
-            for c in courses
-        ])
+        courses = (
+            request.user.enrolled_courses.select_related("category")
+            .distinct()
+            .order_by("title")
+        )
+        serializer = EnrolledCourseSerializer(courses, many=True, context={"request": request})
+        return Response(serializer.data)
 
 
 # =========================================
