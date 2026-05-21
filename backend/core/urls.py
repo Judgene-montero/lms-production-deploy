@@ -62,6 +62,6 @@ urlpatterns = [
     path("api/auth/change-password/", ChangePasswordAPIView.as_view()),
 ]
 
-# VERY IMPORTANT — SERVE MEDIA FILES IN DEVELOPMENT
-if settings.DEBUG:
+# Keep uploaded media reachable when Django is serving requests directly.
+if settings.DEBUG or getattr(settings, "SERVE_MEDIA_FILES", False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { authPost, authPut } from "../../utils/api";
+import { COLLEGE_OPTIONS, getCollegeLabel } from "../../utils/collegeOptions";
 import {
   getDefaultStudentAvatarDataUrl,
   loadStudentProfile,
@@ -24,12 +25,14 @@ export default function Profile() {
     last_name: "",
     school_id: "",
     email: "",
+    college: "",
     bio: "",
     department: "",
     phone: "",
   });
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState("");
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -47,6 +50,7 @@ export default function Profile() {
           last_name: data.last_name || "",
           school_id: data.school_id || "",
           email: data.email || "",
+          college: data.college || "",
           bio: data.bio || "",
           department: data.department || "",
           phone: data.phone || "",
@@ -65,9 +69,14 @@ export default function Profile() {
   }, []);
 
   const displayedAvatar = useMemo(() => {
+    if (avatarLoadError) return getDefaultStudentAvatarDataUrl(profile || {});
     if (avatarPreview) return avatarPreview;
     return resolveStudentAvatar(profile) || getDefaultStudentAvatarDataUrl(profile || {});
-  }, [avatarPreview, profile]);
+  }, [avatarLoadError, avatarPreview, profile]);
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [avatarPreview, profile?.avatar, profile?.avatar_url]);
 
   const handleInput = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -80,7 +89,7 @@ export default function Profile() {
       Boolean(form.last_name?.trim()),
       Boolean(form.school_id?.trim()),
       Boolean(form.email?.trim()),
-      Boolean(form.phone?.trim()),
+      Boolean(form.college?.trim()),
     ];
     const done = checks.filter(Boolean).length;
     return Math.round((done / checks.length) * 100);
@@ -144,6 +153,7 @@ export default function Profile() {
     const lastName = form.last_name.trim();
     const schoolId = form.school_id.trim();
     const email = form.email.trim();
+    const college = form.college.trim();
     const phone = form.phone.trim();
     const isSchoolIdLocked = Boolean(profile?.school_id);
 
@@ -154,6 +164,11 @@ export default function Profile() {
     }
     if (!email) {
       setError("Email is required.");
+      setSaving(false);
+      return;
+    }
+    if (!college) {
+      setError("Program / College is required.");
       setSaving(false);
       return;
     }
@@ -186,6 +201,7 @@ export default function Profile() {
         middle_initial: middleInitial,
         last_name: lastName,
         email,
+        college,
         bio: form.bio,
         department: form.department,
         phone,
@@ -204,6 +220,10 @@ export default function Profile() {
         last_name: updated.last_name || prev.last_name,
         school_id: updated.school_id || prev.school_id,
         email: updated.email || prev.email,
+        college: updated.college || prev.college,
+        bio: updated.bio ?? prev.bio,
+        department: updated.department ?? prev.department,
+        phone: updated.phone ?? prev.phone,
       }));
       setSuccess("Profile saved successfully.");
     } catch (requestError) {
@@ -218,7 +238,7 @@ export default function Profile() {
   }
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6">
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {success && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{success}</div>}
 
@@ -234,7 +254,7 @@ export default function Profile() {
         </article>
         <article className={cardClass}>
           <p className="text-sm text-gray-500">Program / College</p>
-          <p className="mt-2 text-lg font-semibold text-gray-900">{profile?.college || "Not set"}</p>
+          <p className="mt-2 text-lg font-semibold text-gray-900">{getCollegeLabel(profile?.college) || "Not set"}</p>
         </article>
         <article className={cardClass}>
           <p className="text-sm text-gray-500">Account Status</p>
@@ -245,7 +265,12 @@ export default function Profile() {
       <section className={cardClass}>
         <h2 className="text-lg font-semibold text-emerald-900">Avatar Upload</h2>
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
-          <img src={displayedAvatar} alt="Student avatar" className="h-20 w-20 rounded-full object-cover ring-2 ring-emerald-200" />
+          <img
+            src={displayedAvatar}
+            alt="Student avatar"
+            onError={() => setAvatarLoadError(true)}
+            className="h-20 w-20 rounded-full object-cover ring-2 ring-emerald-200"
+          />
           <div className="w-full space-y-2">
             <label
               onDragOver={(event) => {
@@ -303,9 +328,9 @@ export default function Profile() {
           />
           <input
             className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2"
-            value={profile?.college || ""}
+            value={getCollegeLabel(profile?.college)}
             readOnly
-            placeholder="College"
+            placeholder="Program / College"
           />
           <div>
             <input
@@ -346,6 +371,18 @@ export default function Profile() {
             onChange={(event) => handleInput("last_name", event.target.value)}
             placeholder="Last Name"
           />
+          <select
+            className="rounded-xl border border-gray-200 px-3 py-2 md:col-span-2"
+            value={form.college}
+            onChange={(event) => handleInput("college", event.target.value)}
+          >
+            <option value="">Select Program / College</option>
+            {COLLEGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <input className="rounded-xl border border-gray-200 px-3 py-2 md:col-span-2" type="email" value={form.email} onChange={(event) => handleInput("email", event.target.value)} placeholder="Email" />
           <input className="rounded-xl border border-gray-200 px-3 py-2" value={form.department} onChange={(event) => handleInput("department", event.target.value)} placeholder="Department" />
           <textarea className="rounded-xl border border-gray-200 px-3 py-2 md:col-span-2" rows={4} value={form.bio} onChange={(event) => handleInput("bio", event.target.value)} placeholder="Bio" />
@@ -371,8 +408,8 @@ export default function Profile() {
             <p className="mt-1 font-medium text-gray-900">{form.school_id || "Not set"}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <p className="text-sm text-gray-500">Department</p>
-            <p className="mt-1 font-medium text-gray-900">{form.department || "Not set"}</p>
+            <p className="text-sm text-gray-500">Program / College</p>
+            <p className="mt-1 font-medium text-gray-900">{getCollegeLabel(form.college) || "Not set"}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <p className="text-sm text-gray-500">Phone</p>
@@ -381,16 +418,24 @@ export default function Profile() {
         </div>
       </section>
 
-      <div className="fixed bottom-4 right-4 z-30">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-emerald-700 disabled:opacity-60"
-        >
-          {saving ? "Saving..." : "Save Changes"}
-        </button>
-      </div>
+      <section className={cardClass}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">Ready to save?</p>
+            <p className="text-sm text-gray-600">Your profile updates apply only to your own account.</p>
+          </div>
+          <div className="flex w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-emerald-700 disabled:opacity-60 sm:w-auto"
+            >
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

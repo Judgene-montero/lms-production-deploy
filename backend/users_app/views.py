@@ -294,6 +294,20 @@ def _ensure_student(user):
     return getattr(user, "role", "") == "student"
 
 
+def _normalize_college_value(value):
+    if value in (None, ""):
+        return None
+    cleaned = str(value).strip().upper()
+    valid_codes = {choice[0] for choice in User.COLLEGE_CHOICES}
+    return cleaned if cleaned in valid_codes else None
+
+
+def _compute_profile_complete(user):
+    required_for_all = [user.first_name, user.last_name, user.email, user.middle_initial, user.college]
+    student_ok = bool(user.school_id) if getattr(user, "role", "") == "student" else True
+    return all(bool(value) for value in required_for_all) and student_ok
+
+
 class InstructorProfileAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
@@ -329,7 +343,13 @@ class InstructorProfileAPIView(APIView):
             user.phone = str(data.get("phone", "")).strip()
         if "department" in data:
             user.department = str(data.get("department", "")).strip()
+        if "college" in data:
+            normalized_college = _normalize_college_value(data.get("college"))
+            if data.get("college") not in (None, "") and not normalized_college:
+                return Response({"error": "Invalid program / college selection."}, status=status.HTTP_400_BAD_REQUEST)
+            user.college = normalized_college
 
+        user.profile_complete = _compute_profile_complete(user)
         user.save()
         serializer = InstructorProfileSerializer(user, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -429,6 +449,11 @@ class StudentProfileAPIView(APIView):
             user.phone = phone
         if "department" in data:
             user.department = str(data.get("department", "")).strip()
+        if "college" in data:
+            normalized_college = _normalize_college_value(data.get("college"))
+            if data.get("college") not in (None, "") and not normalized_college:
+                return Response({"error": "Invalid program / college selection."}, status=status.HTTP_400_BAD_REQUEST)
+            user.college = normalized_college
 
         if "school_id" in data:
             incoming_school_id = str(data.get("school_id", "")).strip()
@@ -449,8 +474,7 @@ class StudentProfileAPIView(APIView):
         if not user.first_name or not user.last_name:
             return Response({"error": "First name and last name are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        required_for_all = [user.first_name, user.last_name, user.email, user.middle_initial, user.college]
-        user.profile_complete = all(bool(value) for value in required_for_all) and bool(user.school_id)
+        user.profile_complete = _compute_profile_complete(user)
         user.save()
         serializer = StudentProfileSerializer(user, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)

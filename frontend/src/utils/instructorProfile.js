@@ -1,4 +1,5 @@
 import { authGet, getUserProfile } from "./api";
+import { getApiBaseUrl } from "./runtimeConfig";
 
 const PROFILE_STORAGE_KEY = "instructor_profile";
 const PROFILE_EVENT = "instructor-profile-updated";
@@ -21,7 +22,14 @@ export const getDefaultAvatarDataUrl = (profile = {}) => {
 };
 
 export const resolveInstructorAvatar = (profile = {}) => {
-  return profile?.avatar_url || profile?.avatar || profile?.profile_picture || null;
+  const avatar = profile?.avatar_url || profile?.avatar || profile?.profile_picture || null;
+  if (!avatar) return null;
+  if (/^(data:|blob:|https?:\/\/)/i.test(String(avatar))) {
+    return avatar;
+  }
+  const base = getApiBaseUrl();
+  const normalizedPath = String(avatar).startsWith("/") ? String(avatar) : `/${String(avatar)}`;
+  return `${base}${normalizedPath}`;
 };
 
 export const readCachedInstructorProfile = () => {
@@ -35,8 +43,13 @@ export const readCachedInstructorProfile = () => {
 
 export const writeInstructorProfile = (profile) => {
   if (!profile) return;
-  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-  window.dispatchEvent(new CustomEvent(PROFILE_EVENT, { detail: profile }));
+  const normalizedProfile = {
+    ...profile,
+    avatar: resolveInstructorAvatar(profile),
+    avatar_url: resolveInstructorAvatar(profile),
+  };
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(normalizedProfile));
+  window.dispatchEvent(new CustomEvent(PROFILE_EVENT, { detail: normalizedProfile }));
 };
 
 export const subscribeInstructorProfile = (handler) => {

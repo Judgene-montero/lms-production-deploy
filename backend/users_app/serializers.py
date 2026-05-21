@@ -170,13 +170,15 @@ class InstructorProfileSerializer(serializers.ModelSerializer):
             "middle_initial",
             "full_name",
             "name",
+            "profile_complete",
+            "college",
             "bio",
             "phone",
             "department",
             "avatar",
             "avatar_url",
         )
-        read_only_fields = ("id", "username", "full_name", "name", "avatar_url")
+        read_only_fields = ("id", "username", "full_name", "name", "profile_complete", "avatar_url")
 
     def get_full_name(self, obj):
         mi = f"{obj.middle_initial}." if obj.middle_initial else ""
@@ -240,7 +242,6 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             "full_name",
             "name",
             "school_id",
-            "college",
             "profile_complete",
             "can_edit_school_id",
             "avatar_url",
