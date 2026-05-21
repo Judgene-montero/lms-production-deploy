@@ -25,6 +25,12 @@ const isCourseArchived = (course) =>
   String(course?.status || "").toLowerCase() === "archived" ||
   String(course?.state || "").toLowerCase() === "archived";
 
+const formatCourseDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+};
+
 function InstructorCourses() {
   const navigate = useNavigate();
 
@@ -401,6 +407,12 @@ function InstructorCourses() {
                       <div className="col-span-2 rounded-lg border border-emerald-100 bg-emerald-50/40 px-3 py-2">
                         <p className="text-xs uppercase tracking-wide text-gray-500">Lessons</p>
                         <p className="mt-1 font-semibold text-gray-700">{course.lessons_count || 0}</p>
+                      </div>
+                      <div className="col-span-2 rounded-lg border border-emerald-100 bg-emerald-50/40 px-3 py-2">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Schedule</p>
+                        <p className="mt-1 font-semibold text-gray-700">
+                          {formatCourseDate(course.start_date) || "Start date not set"} to {formatCourseDate(course.end_date) || "Open-ended"}
+                        </p>
                       </div>
                     </div>
 

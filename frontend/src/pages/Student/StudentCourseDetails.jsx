@@ -146,6 +146,13 @@ const formatDateTime = (value, fallback = "No date") => {
   return parsed.toLocaleString();
 };
 
+const formatCourseDate = (value, fallback = "No date") => {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return parsed.toLocaleDateString();
+};
+
 const formatDueText = (value) => formatDateTime(value, "No due date");
 
 export default function StudentCourseDetails() {
@@ -1258,6 +1265,12 @@ export default function StudentCourseDetails() {
                 </p>
                 <p className="inline-flex rounded-full border border-emerald-100 bg-emerald-50/80 px-3 py-1.5 text-sm text-emerald-800 shadow-sm">
                   Progress: <span className="ml-1 font-semibold">{courseProgress.toFixed(0)}%</span>
+                </p>
+                <p className="inline-flex rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm text-slate-600 shadow-sm">
+                  Start: <span className="ml-1 font-semibold text-slate-800">{formatCourseDate(course.start_date, "Not set")}</span>
+                </p>
+                <p className="inline-flex rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm text-slate-600 shadow-sm">
+                  End: <span className="ml-1 font-semibold text-slate-800">{formatCourseDate(course.end_date, "Open-ended")}</span>
                 </p>
                 <Link
                   to={`/courses/${courseId}/meetings`}

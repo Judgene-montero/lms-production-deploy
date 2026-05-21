@@ -22,6 +22,12 @@ const getProgressLabel = (progress) => {
   return "Not started";
 };
 
+const formatCourseDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+};
+
 const pageCardClass =
   "rounded-[28px] border border-slate-200 bg-white shadow-sm md:border-emerald-100/80 md:bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(240,253,250,0.88),rgba(248,250,252,0.98))] md:shadow-[0_20px_48px_rgba(15,23,42,0.05)]";
 
@@ -319,6 +325,13 @@ export default function MyCourses() {
                   <p className="mt-4 line-clamp-3 min-h-[72px] text-sm leading-relaxed text-slate-600">
                     {course.description || "No course description available."}
                   </p>
+
+                  <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/45 px-4 py-3 text-xs text-slate-700">
+                    <p className="font-semibold uppercase tracking-[0.18em] text-emerald-900">Schedule</p>
+                    <p className="mt-1">
+                      {formatCourseDate(course.start_date) || "Start date not set"} to {formatCourseDate(course.end_date) || "Open-ended"}
+                    </p>
+                  </div>
 
                   <div className="mt-5 rounded-[24px] border border-white/80 bg-white/82 p-4 shadow-sm">
                     <div className="mb-3 flex items-center justify-between gap-3">

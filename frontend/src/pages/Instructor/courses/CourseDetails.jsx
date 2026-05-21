@@ -65,6 +65,12 @@ const clampPercent = (value) => {
   return Math.max(0, Math.min(100, Math.round(parsed)));
 };
 
+const formatCourseDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+};
+
 const pickFirstString = (...values) =>
   values.find((value) => typeof value === "string" && value.trim()) || "";
 
@@ -569,6 +575,14 @@ export default function CourseDetails({ currentUser = {} }) {
               <p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">Course Workspace</p>
               <h1 className="text-2xl font-semibold text-emerald-950 sm:text-3xl">{course.title}</h1>
               <p className="mt-1 max-w-3xl text-sm text-gray-600 sm:text-base">{course.description || "No description provided."}</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-sm text-gray-600">
+                <span className="rounded-full border border-emerald-100 bg-white px-3 py-1.5">
+                  Start: <span className="font-semibold text-emerald-900">{formatCourseDate(course.start_date) || "Not set"}</span>
+                </span>
+                <span className="rounded-full border border-emerald-100 bg-white px-3 py-1.5">
+                  End: <span className="font-semibold text-emerald-900">{formatCourseDate(course.end_date) || "Open-ended"}</span>
+                </span>
+              </div>
             </div>
           </div>
 

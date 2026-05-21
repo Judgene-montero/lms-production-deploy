@@ -980,6 +980,7 @@ def course_detail(request, course_id):
         ),
         "thumbnail": request.build_absolute_uri(course.thumbnail.url) if course.thumbnail else None,
         "start_date": course.start_date,
+        "end_date": course.end_date,
         "start_time": course.start_time,
         "scheduled_start_at": course.get_start_datetime(),
         "is_archived": course.is_archived,

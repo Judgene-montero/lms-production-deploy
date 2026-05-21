@@ -8,6 +8,7 @@ const initialForm = {
   categoryId: "",
   scheduleManually: false,
   startDate: "",
+  endDate: "",
   startTime: "",
   thumbnail: null,
 };
@@ -99,6 +100,12 @@ const CreateCourse = () => {
       return;
     }
 
+    if (form.scheduleManually && form.startDate && form.endDate && form.endDate < form.startDate) {
+      setError("End date cannot be earlier than the start date.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const payload = new FormData();
       payload.append("title", form.title.trim());
@@ -108,6 +115,10 @@ const CreateCourse = () => {
       if (form.scheduleManually) {
         payload.append("start_date", form.startDate);
         payload.append("start_time", form.startTime);
+      }
+
+      if (form.endDate) {
+        payload.append("end_date", form.endDate);
       }
 
       if (form.thumbnail) {
@@ -127,6 +138,7 @@ const CreateCourse = () => {
       const responseData = requestError.response?.data;
       const apiError =
         responseData?.category_id?.[0] ||
+        responseData?.end_date?.[0] ||
         responseData?.non_field_errors?.[0] ||
         responseData?.detail ||
         responseData?.error;
@@ -228,6 +240,17 @@ const CreateCourse = () => {
                 </div>
               </>
             )}
+
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-emerald-900">End Date</label>
+              <input
+                type="date"
+                value={form.endDate}
+                onChange={(event) => handleField("endDate", event.target.value)}
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+              />
+              <p className="mt-1 text-xs text-gray-500">Optional. Leave blank if the course has no fixed end date.</p>
+            </div>
 
             <div>
               <label className="mb-1 block text-sm font-semibold text-emerald-900">Thumbnail Upload</label>

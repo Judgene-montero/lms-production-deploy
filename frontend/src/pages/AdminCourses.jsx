@@ -12,6 +12,7 @@ const initialForm = {
   category_id: "",
   instructor_id: "",
   start_date: "",
+  end_date: "",
   start_time: "",
   archived: false,
   thumbnail: null,
@@ -111,6 +112,7 @@ export default function AdminCourses() {
         category_id: form.category_id || null,
         instructor_id: Number(form.instructor_id),
         is_archived: Boolean(form.archived),
+        end_date: form.end_date || null,
       };
       if (!payload.start_date) delete payload.start_date;
       if (!payload.start_time) delete payload.start_time;
@@ -125,6 +127,7 @@ export default function AdminCourses() {
         is_archived: payload.is_archived,
       };
       if (payload.start_date) basePayload.start_date = payload.start_date;
+      basePayload.end_date = payload.end_date;
       if (payload.start_time) basePayload.start_time = payload.start_time;
       if (shouldRemoveThumbnail && !hasThumbnailFile) {
         basePayload.thumbnail = null;
@@ -135,8 +138,8 @@ export default function AdminCourses() {
       if (shouldSendMultipart) {
         const formData = new FormData();
         Object.entries(basePayload).forEach(([key, value]) => {
-          if (value !== null && value !== undefined && value !== "") {
-            formData.append(key, String(value));
+          if (value !== undefined && value !== "") {
+            formData.append(key, value === null ? "" : String(value));
           }
         });
         formData.append("thumbnail", payload.thumbnail);
@@ -160,6 +163,8 @@ export default function AdminCourses() {
       const payload = error.response?.data;
       if (payload?.thumbnail?.[0]) {
         setNotice(payload.thumbnail[0]);
+      } else if (payload?.end_date?.[0]) {
+        setNotice(payload.end_date[0]);
       } else if (payload?.error) {
         setNotice(payload.error);
       } else {
@@ -178,6 +183,7 @@ export default function AdminCourses() {
       category_id: course.category?.id || "",
       instructor_id: course.instructor_id || "",
       start_date: course.start_date || "",
+      end_date: course.end_date || "",
       start_time: course.start_time || "",
       archived: Boolean(course.is_archived),
       thumbnail: null,
@@ -353,11 +359,17 @@ export default function AdminCourses() {
                 </option>
               ))}
             </select>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <input
                 type="date"
                 value={form.start_date}
                 onChange={(event) => setForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+              />
+              <input
+                type="date"
+                value={form.end_date}
+                onChange={(event) => setForm((prev) => ({ ...prev, end_date: event.target.value }))}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
               />
               <input
@@ -478,6 +490,9 @@ export default function AdminCourses() {
                     ) : null}
                     <p className="font-semibold text-slate-900">{course.title}</p>
                     <p className="text-xs text-slate-500">{course.description || "No description"}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Schedule: {course.start_date || "-"} to {course.end_date || "Open-ended"}
+                    </p>
                   </td>
                   <td className="px-4 py-3 text-slate-700">{course.instructor_name || "-"}</td>
                   <td className="px-4 py-3 text-slate-700">{course.category?.name || "Uncategorized"}</td>

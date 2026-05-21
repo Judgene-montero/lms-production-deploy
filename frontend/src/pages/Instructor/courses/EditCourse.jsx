@@ -9,6 +9,8 @@ const EditCourse = () => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [categories, setCategories] = useState([]);
   const [thumbnail, setThumbnail] = useState(null);
   const [thumbnailPreview, setThumbnailPreview] = useState(null);
@@ -36,6 +38,8 @@ const EditCourse = () => {
         setTitle(course.title || "");
         setDescription(course.description || "");
         setCategoryId(course.category?.id ? String(course.category.id) : "");
+        setStartDate(course.start_date || "");
+        setEndDate(course.end_date || "");
         setThumbnailPreview(course.thumbnail || null);
         setCategories(Array.isArray(categoriesResponse.data) ? categoriesResponse.data : []);
       } catch (requestError) {
@@ -87,11 +91,18 @@ const EditCourse = () => {
       return;
     }
 
+    if (startDate && endDate && endDate < startDate) {
+      setError("End date cannot be earlier than the start date.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const formData = new FormData();
       formData.append("title", title.trim());
       formData.append("description", description.trim());
       formData.append("category_id", categoryId);
+      formData.append("end_date", endDate || "");
 
       if (thumbnail) {
         formData.append("thumbnail", thumbnail);
@@ -156,6 +167,17 @@ const EditCourse = () => {
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="block font-medium mb-1">End Date</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            className="w-full border px-3 py-2 rounded"
+          />
+          <p className="mt-1 text-xs text-gray-500">Optional. Existing start date rules stay unchanged.</p>
         </div>
 
         <div>

@@ -74,6 +74,7 @@ class CourseSerializer(serializers.ModelSerializer):
             'category_id',
             'thumbnail',
             'start_date',
+            'end_date',
             'start_time',
             'scheduled_start_at',
             'instructor',
@@ -122,6 +123,11 @@ class CourseSerializer(serializers.ModelSerializer):
         has_start_time = "start_time" in attrs
         if has_start_date != has_start_time:
             raise serializers.ValidationError("start_date and start_time must be provided together.")
+
+        start_date = attrs.get("start_date", getattr(instance, "start_date", None))
+        end_date = attrs.get("end_date", getattr(instance, "end_date", None))
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": "End date cannot be earlier than the start date."})
         return attrs
 
     def get_is_instructor(self, obj):

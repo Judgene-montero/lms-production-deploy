@@ -329,6 +329,13 @@ export default function AdminCourseDetail() {
                   </div>
                   <div className="rounded-2xl border border-slate-200 p-4">
                     <div className="flex items-center gap-2 text-slate-900">
+                      <CalendarDays className="h-4 w-4 text-blue-600" />
+                      <p className="font-semibold">End Date</p>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">{fmtDate(course.end_date)}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 p-4">
+                    <div className="flex items-center gap-2 text-slate-900">
                       <Clock3 className="h-4 w-4 text-blue-600" />
                       <p className="font-semibold">Start Time</p>
                     </div>

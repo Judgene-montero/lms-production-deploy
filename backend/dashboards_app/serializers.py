@@ -32,6 +32,9 @@ class CourseSerializer(serializers.ModelSerializer):
             "description",
             "category",
             "thumbnail",
+            "start_date",
+            "end_date",
+            "start_time",
             "students_count",
             "join_code",              # ✅ ADD THIS
             "join_code_enabled",      # ✅ ADD THIS
@@ -49,7 +52,15 @@ class CourseCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Course
-        fields = ["id", "title","description","category","thumbnail", "student_ids"]
+        fields = ["id", "title", "description", "category", "thumbnail", "start_date", "end_date", "start_time", "student_ids"]
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        start_date = attrs.get("start_date", getattr(instance, "start_date", None))
+        end_date = attrs.get("end_date", getattr(instance, "end_date", None))
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": "End date cannot be earlier than the start date."})
+        return attrs
 
     def create(self, validated_data):
         student_ids = validated_data.pop("student_ids", [])

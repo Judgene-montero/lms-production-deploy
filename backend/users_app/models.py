@@ -153,6 +153,7 @@ class Course(models.Model):
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="courses", null=True, blank=True)
     thumbnail = models.ImageField(upload_to="course_thumbnails/", blank=True, null=True)
     start_date = models.DateField(default=current_local_date)
+    end_date = models.DateField(null=True, blank=True)
     start_time = models.TimeField(default=current_local_time)
 
     students = models.ManyToManyField(
