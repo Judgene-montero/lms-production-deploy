@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { LuBookOpen, LuUsers } from "react-icons/lu";
-import { authGet, authPost, authPut } from "../../../utils/api";
+import { authDelete, authGet, authPost, authPut } from "../../../utils/api";
 import { getDefaultAvatarDataUrl } from "../../../utils/instructorProfile";
 import { getWebSocketBaseUrl } from "../../../utils/runtimeConfig";
 
@@ -74,6 +74,8 @@ const formatCourseDate = (value) => {
 const pickFirstString = (...values) =>
   values.find((value) => typeof value === "string" && value.trim()) || "";
 
+const normalizeRequestedTab = (value) => (value === "students" ? "people" : value);
+
 const mapStudentForDisplay = (student = {}) => {
   const fullName = pickFirstString(student.full_name, student.name, student.username, "Student");
   const assignmentsCompleted = Math.max(
@@ -122,7 +124,7 @@ const mapStudentForDisplay = (student = {}) => {
   };
 };
 
-function PeopleTab({ people, loading, error, onOpenProfile }) {
+function PeopleTab({ people, loading, error, isInstructor, onOpenProfile, onRemoveStudent, removingStudentId }) {
   if (loading) {
     return (
       <div className="space-y-3">
@@ -144,14 +146,16 @@ function PeopleTab({ people, loading, error, onOpenProfile }) {
   return (
     <div className="space-y-4">
       {people.map((student) => (
-        <button
+        <div
           key={student.id}
-          type="button"
-          onClick={() => onOpenProfile(student)}
           className="w-full rounded-xl border border-emerald-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
         >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenProfile(student)}
+              className="flex min-w-0 flex-1 items-start gap-3 text-left"
+            >
               <img
                 src={student.avatar}
                 alt={student.fullName}
@@ -161,21 +165,36 @@ function PeopleTab({ people, loading, error, onOpenProfile }) {
                 <p className="text-base font-semibold text-emerald-950">{student.fullName}</p>
                 <p className="text-sm text-gray-600">{student.email || "Email not available"}</p>
               </div>
-            </div>
+            </button>
 
-            <div className="w-full max-w-full rounded-lg border border-emerald-100 bg-emerald-50/40 p-3 sm:w-[360px]">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                Student Activity Summary
-              </p>
-              <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-gray-700 sm:grid-cols-3">
-                <p>Assignments: {student.activity.assignmentsCompleted}</p>
-                <p>Progress: {student.activity.progressPercent}%</p>
-                <p>Submissions: {student.activity.submissions}</p>
+            <div className="flex w-full max-w-full flex-col gap-3 sm:w-[360px]">
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                  Student Activity Summary
+                </p>
+                <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-gray-700 sm:grid-cols-3">
+                  <p>Assignments: {student.activity.assignmentsCompleted}</p>
+                  <p>Progress: {student.activity.progressPercent}%</p>
+                  <p>Submissions: {student.activity.submissions}</p>
+                </div>
+                <p className="mt-2 text-xs text-gray-600">{student.activity.recentActivity}</p>
               </div>
-              <p className="mt-2 text-xs text-gray-600">{student.activity.recentActivity}</p>
+
+              {isInstructor ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onRemoveStudent(student)}
+                    disabled={removingStudentId === student.id}
+                    className="w-full rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  >
+                    {removingStudentId === student.id ? "Removing..." : "Remove Student"}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
-        </button>
+        </div>
       ))}
     </div>
   );
@@ -196,6 +215,8 @@ const renderTabComponent = ({
   enrollmentRequestsError,
   onApproveRequest,
   onRejectRequest,
+  onRemoveStudent,
+  removingStudentId,
   selectedClassworkFromStream,
   setSelectedClassworkFromStream,
   setActiveTab,
@@ -241,7 +262,17 @@ const renderTabComponent = ({
           />
         );
       }
-      return <PeopleTab people={people} loading={peopleLoading} error={peopleError} onOpenProfile={onOpenProfile} />;
+      return (
+        <PeopleTab
+          people={people}
+          loading={peopleLoading}
+          error={peopleError}
+          isInstructor={isInstructor}
+          onOpenProfile={onOpenProfile}
+          onRemoveStudent={onRemoveStudent}
+          removingStudentId={removingStudentId}
+        />
+      );
     case "enrollment_requests":
       return (
         <EnrollmentRequestsTab
@@ -274,6 +305,8 @@ export default function CourseDetails({ currentUser = {} }) {
   const [people, setPeople] = useState([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [peopleError, setPeopleError] = useState("");
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [removingStudentId, setRemovingStudentId] = useState(null);
   const [moduleCount, setModuleCount] = useState(null);
   const [enrollmentRequests, setEnrollmentRequests] = useState([]);
   const [enrollmentRequestsLoading, setEnrollmentRequestsLoading] = useState(false);
@@ -286,6 +319,26 @@ export default function CourseDetails({ currentUser = {} }) {
   const query = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
   const selectedStudentId = query.get("student");
   const requestedTabFromQuery = query.get("tab");
+  const syncTabInUrl = useCallback(
+    (nextTab, options = {}) => {
+      const nextQuery = new URLSearchParams(location.search);
+      const normalizedTab = normalizeRequestedTab(nextTab);
+
+      if (normalizedTab) {
+        nextQuery.set("tab", normalizedTab);
+      } else {
+        nextQuery.delete("tab");
+      }
+
+      if (!options.keepStudent) {
+        nextQuery.delete("student");
+      }
+
+      const nextUrl = nextQuery.toString() ? `${location.pathname}?${nextQuery.toString()}` : location.pathname;
+      navigate(nextUrl, { replace: true, state: options.state ?? {} });
+    },
+    [location.pathname, location.search, navigate]
+  );
 
   const fetchCourse = useCallback(async () => {
     setLoading(true);
@@ -444,7 +497,7 @@ export default function CourseDetails({ currentUser = {} }) {
 
   React.useEffect(() => {
     const requestedTab = location.state?.activeTab;
-    const normalizedRequestedTab = requestedTab === "students" ? "people" : requestedTab;
+    const normalizedRequestedTab = normalizeRequestedTab(requestedTab);
     if (normalizedRequestedTab && normalizedRequestedTab !== activeTab) {
       setActiveTab(normalizedRequestedTab);
       navigate(location.pathname, { replace: true, state: {} });
@@ -452,12 +505,18 @@ export default function CourseDetails({ currentUser = {} }) {
   }, [activeTab, location.pathname, location.state, navigate]);
 
   React.useEffect(() => {
-    const normalizedRequestedTab = requestedTabFromQuery === "students" ? "people" : requestedTabFromQuery;
+    const normalizedRequestedTab = normalizeRequestedTab(requestedTabFromQuery);
     const validTabs = isInstructor ? [...BASE_TAB_ITEMS, { key: "enrollment_requests" }] : BASE_TAB_ITEMS;
     if (normalizedRequestedTab && validTabs.some((tab) => tab.key === normalizedRequestedTab) && normalizedRequestedTab !== activeTab) {
       setActiveTab(normalizedRequestedTab);
     }
   }, [activeTab, isInstructor, requestedTabFromQuery]);
+
+  React.useEffect(() => {
+    if (activeTab !== "people" && removeTarget) {
+      setRemoveTarget(null);
+    }
+  }, [activeTab, removeTarget]);
 
   const fetchPeople = useCallback(async () => {
     setPeopleLoading(true);
@@ -491,11 +550,40 @@ export default function CourseDetails({ currentUser = {} }) {
   );
 
   const handleBackToPeople = useCallback(() => {
-    const nextQuery = new URLSearchParams(location.search);
-    nextQuery.set("tab", "people");
-    nextQuery.delete("student");
-    navigate(`${location.pathname}?${nextQuery.toString()}`);
-  }, [location.pathname, location.search, navigate]);
+    syncTabInUrl("people");
+  }, [syncTabInUrl]);
+
+  const handleRemoveStudent = useCallback((student) => {
+    setRemoveTarget(student);
+  }, []);
+
+  const confirmRemoveStudent = useCallback(async () => {
+    if (!removeTarget) return;
+
+    setRemovingStudentId(removeTarget.id);
+    setPeopleError("");
+    try {
+      await authDelete(`/api/courses/${courseId}/students/${removeTarget.id}/remove/`);
+      setPeople((current) => current.filter((person) => String(person.id) !== String(removeTarget.id)));
+      setCourse((current) =>
+        current
+          ? {
+              ...current,
+              students_count: Math.max(0, Number(current.students_count || 0) - 1),
+            }
+          : current
+      );
+      if (String(selectedStudentId || "") === String(removeTarget.id)) {
+        handleBackToPeople();
+      }
+      setRemoveTarget(null);
+    } catch (requestError) {
+      console.error(requestError);
+      setPeopleError(requestError?.response?.data?.error || "Failed to remove student.");
+    } finally {
+      setRemovingStudentId(null);
+    }
+  }, [courseId, handleBackToPeople, removeTarget, selectedStudentId]);
 
   const handleApproveEnrollmentRequest = useCallback(
     async (requestId) => {
@@ -672,15 +760,7 @@ export default function CourseDetails({ currentUser = {} }) {
                 type="button"
                 onClick={() => {
                   setActiveTab(tab.key);
-                  if (tab.key !== "people" && selectedStudentId) {
-                    const nextQuery = new URLSearchParams(location.search);
-                    nextQuery.delete("student");
-                    nextQuery.delete("tab");
-                    navigate(
-                      nextQuery.toString() ? `${location.pathname}?${nextQuery.toString()}` : location.pathname,
-                      { replace: true }
-                    );
-                  }
+                  syncTabInUrl(tab.key, { keepStudent: tab.key === "people" && Boolean(selectedStudentId) });
                 }}
                 className={tabClass(activeTab === tab.key)}
               >
@@ -708,12 +788,43 @@ export default function CourseDetails({ currentUser = {} }) {
               enrollmentRequestsError,
               onApproveRequest: handleApproveEnrollmentRequest,
               onRejectRequest: handleRejectEnrollmentRequest,
+              onRemoveStudent: handleRemoveStudent,
+              removingStudentId,
               selectedClassworkFromStream,
               setSelectedClassworkFromStream,
               setActiveTab,
             })}
           </Suspense>
         </section>
+        {removeTarget ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+              <h2 className="text-lg font-semibold text-slate-900">Remove Student</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Are you sure you want to remove this student from the course?
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-800">{removeTarget.fullName}</p>
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setRemoveTarget(null)}
+                  disabled={Boolean(removingStudentId)}
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 sm:w-auto"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRemoveStudent}
+                  disabled={Boolean(removingStudentId)}
+                  className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60 sm:w-auto"
+                >
+                  {removingStudentId ? "Removing..." : "Remove Student"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

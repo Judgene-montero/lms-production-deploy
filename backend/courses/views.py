@@ -1085,6 +1085,28 @@ def students_list(request, course_id):
     return Response(data)
 
 
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def remove_student_from_course(request, course_id, student_id):
+    course = get_object_or_404(Course, id=course_id)
+    if not _can_manage_course(request.user, course):
+        return Response({"error": "Course not found or access denied"}, status=404)
+
+    if getattr(course, "instructor_id", None) == int(student_id):
+        return Response({"error": "Instructor cannot be removed from their own course."}, status=400)
+
+    student = User.objects.filter(id=student_id, role="student").first()
+    if not student:
+        return Response({"error": "Student not found."}, status=404)
+
+    if not course.students.filter(id=student.id).exists():
+        return Response({"error": "Student is not enrolled in this course."}, status=400)
+
+    course.students.remove(student)
+
+    return Response({"message": "Student removed successfully."}, status=200)
+
+
 @api_view(["GET", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])

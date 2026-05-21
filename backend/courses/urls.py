@@ -100,6 +100,7 @@ urlpatterns = [
     path("<int:course_id>/feedback/add/", views.leave_feedback, name="leave-feedback"),
     path("<int:course_id>/add-student/", views.add_student, name="add-student"),
     path("<int:course_id>/students/", views.students_list, name="students-list"),
+    path("<int:course_id>/students/<int:student_id>/remove/", views.remove_student_from_course, name="remove-student-from-course"),
 
     # -----------------------------
     # Activity types
