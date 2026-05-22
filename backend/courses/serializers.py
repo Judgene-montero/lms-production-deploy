@@ -60,6 +60,8 @@ class CourseSerializer(serializers.ModelSerializer):
     state = serializers.SerializerMethodField()
     code = serializers.SerializerMethodField()
     scheduled_start_at = serializers.SerializerMethodField()
+    instructor_name = serializers.SerializerMethodField()
+    instructor_info = serializers.SerializerMethodField()
     join_code = serializers.CharField(read_only=True)
     join_code_enabled = serializers.BooleanField(read_only=True)
     join_code_expiration = serializers.DateTimeField(read_only=True)
@@ -78,6 +80,8 @@ class CourseSerializer(serializers.ModelSerializer):
             'start_time',
             'scheduled_start_at',
             'instructor',
+            'instructor_name',
+            'instructor_info',
             'is_instructor',
             'students_count',
             'lessons_count',
@@ -163,6 +167,40 @@ class CourseSerializer(serializers.ModelSerializer):
 
     def get_scheduled_start_at(self, obj):
         return obj.get_start_datetime()
+
+    def _build_instructor_name(self, instructor):
+        if not instructor:
+            return "Instructor unavailable"
+        full_name_method = getattr(instructor, "full_name", None)
+        if callable(full_name_method):
+            full_name = str(full_name_method() or "").strip()
+            if full_name:
+                return full_name
+        first_name = str(getattr(instructor, "first_name", "") or "").strip()
+        last_name = str(getattr(instructor, "last_name", "") or "").strip()
+        combined = " ".join(part for part in [first_name, last_name] if part).strip()
+        if combined:
+            return combined
+        username = str(getattr(instructor, "username", "") or "").strip()
+        if username:
+            return username
+        email = str(getattr(instructor, "email", "") or "").strip()
+        if email:
+            return email
+        return "Instructor unavailable"
+
+    def get_instructor_name(self, obj):
+        return self._build_instructor_name(getattr(obj, "instructor", None))
+
+    def get_instructor_info(self, obj):
+        instructor = getattr(obj, "instructor", None)
+        if not instructor:
+            return None
+        return {
+            "id": instructor.id,
+            "name": self._build_instructor_name(instructor),
+            "email": str(getattr(instructor, "email", "") or "").strip(),
+        }
 # -----------------------------
 # Lesson Serializer
 # -----------------------------

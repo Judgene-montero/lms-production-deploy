@@ -212,7 +212,7 @@ class StudentCoursesAPIView(APIView):
             return Response({"error": "Unauthorized"}, status=403)
 
         courses = (
-            request.user.enrolled_courses.select_related("category")
+            request.user.enrolled_courses.select_related("category", "instructor")
             .distinct()
             .order_by("title")
         )

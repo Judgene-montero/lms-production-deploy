@@ -153,6 +153,21 @@ const formatCourseDate = (value, fallback = "No date") => {
   return parsed.toLocaleDateString();
 };
 
+const getInstructorDisplayName = (course = {}) => {
+  const directName =
+    course?.instructor_name ||
+    course?.teacher_name ||
+    course?.instructor_info?.name ||
+    course?.instructor?.name ||
+    course?.instructor?.username ||
+    "";
+
+  const normalized = String(directName || "").trim();
+  if (!normalized) return "Instructor unavailable";
+  if (/^\d+$/.test(normalized)) return "Instructor unavailable";
+  return normalized;
+};
+
 const formatDueText = (value) => formatDateTime(value, "No due date");
 
 export default function StudentCourseDetails() {
@@ -1261,7 +1276,7 @@ export default function StudentCourseDetails() {
               <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600 sm:text-base">{course.description || "No description provided."}</p>
               <div className="mt-4 flex flex-wrap gap-3">
                 <p className="inline-flex rounded-full border border-white/80 bg-white/75 px-3 py-1.5 text-sm text-slate-600 shadow-sm">
-                Instructor: <span className="ml-1 font-semibold text-slate-800">{course?.instructor_name || course?.instructor?.username || "Instructor"}</span>
+                Instructor: <span className="ml-1 break-words font-semibold text-slate-800">{getInstructorDisplayName(course)}</span>
                 </p>
                 <p className="inline-flex rounded-full border border-emerald-100 bg-emerald-50/80 px-3 py-1.5 text-sm text-emerald-800 shadow-sm">
                   Progress: <span className="ml-1 font-semibold">{courseProgress.toFixed(0)}%</span>

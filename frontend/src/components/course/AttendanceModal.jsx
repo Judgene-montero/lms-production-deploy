@@ -96,9 +96,9 @@ function AttendanceModal({
   if (!isOpen || !isInstructor) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3">
-      <section className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-xl">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 bg-emerald-50 px-4 py-3">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/45 p-2 sm:p-3">
+      <section className="mx-auto my-3 flex min-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-xl sm:my-6 sm:min-h-0 sm:max-h-[90vh]">
+        <header className="flex flex-col gap-2 border-b border-emerald-100 bg-emerald-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div>
             <h4 className="text-lg font-semibold text-emerald-950">
               {mode === "create" ? "Create Attendance Session" : "Mark Attendance"}
@@ -112,13 +112,13 @@ function AttendanceModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+            className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 sm:w-auto"
           >
             Close
           </button>
         </header>
 
-        <div className="max-h-[calc(90vh-64px)] overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
           {mode === "create" && (
             <section className="rounded-xl border border-gray-200 bg-white p-4">
               <div className="grid gap-3 md:grid-cols-2">
@@ -198,18 +198,18 @@ function AttendanceModal({
                 <button
                   type="button"
                   onClick={toggleSelectAllFiltered}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:w-auto"
                 >
                   Toggle all filtered ({filteredStudents.length})
                 </button>
-                <span className="text-xs text-gray-500">
+                <span className="w-full text-xs text-gray-500 sm:w-auto">
                   Showing {Math.min(filteredStudents.length, (currentPage - 1) * rowsPerPage + 1)}-
                   {Math.min(filteredStudents.length, currentPage * rowsPerPage)} of {filteredStudents.length}
                 </span>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                <span className="w-full text-xs font-semibold uppercase tracking-wide text-emerald-800 sm:w-auto">
                   Bulk mark ({selectedStudentIds.length})
                 </span>
                 {ATTENDANCE_OPTIONS.map((option) => (
@@ -228,7 +228,7 @@ function AttendanceModal({
               {!selectedSessionActivity ? (
                 <p className="mt-4 text-sm text-gray-500">Select a session to mark attendance.</p>
               ) : (
-                <div className="mt-4 grid max-h-[48vh] gap-2 overflow-y-auto pr-1">
+                <div className="mt-4 grid max-h-[52vh] gap-3 overflow-y-auto pr-0 sm:pr-1">
                   {paginatedStudents.map((student) => {
                     const state = attendanceForSession[String(student.id)] || {};
                     const statusValue = state.status || "";
@@ -240,21 +240,23 @@ function AttendanceModal({
                     return (
                       <article
                         key={student.id}
-                        className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-lg border border-gray-200 px-3 py-2"
+                        className="rounded-xl border border-gray-200 px-3 py-3 sm:grid sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:items-center sm:gap-3 sm:rounded-lg sm:py-2"
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedIdSet.has(String(student.id))}
-                          onChange={() => toggleStudentSelection(student.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-emerald-600"
-                        />
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{student.username}</p>
-                          <p className="text-xs text-gray-500">
-                            {student.school_id || "No school id"} | Points: {Number.isFinite(pointsValue) ? pointsValue.toFixed(2) : "0.00"}
-                          </p>
+                        <div className="flex items-start gap-3 sm:contents">
+                          <input
+                            type="checkbox"
+                            checked={selectedIdSet.has(String(student.id))}
+                            onChange={() => toggleStudentSelection(student.id)}
+                            className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-emerald-600 sm:mt-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="break-words text-sm font-medium text-gray-800">{student.username}</p>
+                            <p className="mt-1 break-words text-xs text-gray-500">
+                              {student.school_id || "No school id"} | Points: {Number.isFinite(pointsValue) ? pointsValue.toFixed(2) : "0.00"}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 rounded-md border border-gray-200 bg-white p-1">
+                        <div className="mt-3 flex flex-wrap items-center gap-1 rounded-md border border-gray-200 bg-white p-1 sm:mt-0">
                           {ATTENDANCE_OPTIONS.map((option) => (
                             <button
                               key={`${student.id}-${option.value}`}
@@ -266,14 +268,14 @@ function AttendanceModal({
                             </button>
                           ))}
                         </div>
-                        <label className="text-xs text-gray-600">
+                        <label className="mt-3 block text-xs text-gray-600 sm:mt-0">
                           Points
                           <input
                             type="number"
                             step="0.01"
                             value={state.points_earned ?? ""}
                             onChange={(event) => onPointsChange(student.id, event.target.value)}
-                            className="mt-1 w-24 rounded border border-gray-300 px-2 py-1 text-sm"
+                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm sm:w-24"
                           />
                         </label>
                       </article>
@@ -282,13 +284,13 @@ function AttendanceModal({
                 </div>
               )}
 
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <label className="text-xs text-gray-600">
                   Rows per page
                   <select
                     value={rowsPerPage}
                     onChange={(event) => setRowsPerPage(Number(event.target.value))}
-                    className="ml-2 rounded border border-gray-300 px-2 py-1 text-xs"
+                    className="ml-0 mt-1 block rounded border border-gray-300 px-2 py-1 text-xs sm:ml-2 sm:mt-0 sm:inline-block"
                   >
                     <option value={8}>8</option>
                     <option value={12}>12</option>
@@ -296,12 +298,12 @@ function AttendanceModal({
                     <option value={40}>40</option>
                   </select>
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                     disabled={currentPage <= 1}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 disabled:opacity-40"
+                    className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-700 disabled:opacity-40"
                   >
                     Prev
                   </button>
@@ -310,7 +312,7 @@ function AttendanceModal({
                     type="button"
                     onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                     disabled={currentPage >= totalPages}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 disabled:opacity-40"
+                    className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-700 disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -320,24 +322,24 @@ function AttendanceModal({
           )}
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-emerald-100 bg-white px-4 py-3">
+        <footer className="flex flex-col gap-3 border-t border-emerald-100 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div>
             {mode === "edit" && selectedSessionActivity && (
               <button
                 type="button"
                 onClick={onDeleteSession}
                 disabled={saving}
-                className="rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                className="w-full rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60 sm:w-auto"
               >
                 Delete Session
               </button>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:w-auto"
             >
               Cancel
             </button>
@@ -345,7 +347,7 @@ function AttendanceModal({
               type="button"
               onClick={mode === "create" ? onCreateSession : onSaveSession}
               disabled={saving || (mode === "edit" && !selectedSessionActivity)}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              className="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 sm:w-auto"
             >
               {saving ? "Saving..." : mode === "create" ? "Create Session" : "Save Attendance"}
             </button>

@@ -28,6 +28,21 @@ const formatCourseDate = (value) => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
 };
 
+const getInstructorDisplayName = (course = {}) => {
+  const directName =
+    course?.instructor_name ||
+    course?.teacher_name ||
+    course?.instructor_info?.name ||
+    course?.instructor?.name ||
+    course?.instructor?.username ||
+    "";
+
+  const normalized = String(directName || "").trim();
+  if (!normalized) return "Instructor unavailable";
+  if (/^\d+$/.test(normalized)) return "Instructor unavailable";
+  return normalized;
+};
+
 const pageCardClass =
   "rounded-[28px] border border-slate-200 bg-white shadow-sm md:border-emerald-100/80 md:bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(240,253,250,0.88),rgba(248,250,252,0.98))] md:shadow-[0_20px_48px_rgba(15,23,42,0.05)]";
 
@@ -295,11 +310,7 @@ export default function MyCourses() {
           <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
             {courses.map((course) => {
               const progress = getProgress(course);
-              const instructorName =
-                course.instructor_name ||
-                course.teacher_name ||
-                course.instructor ||
-                "Instructor";
+              const instructorName = getInstructorDisplayName(course);
               const meta = courseMeta[course.id] || {};
               const visualProgress = Number(meta.completionPct ?? progress);
 
@@ -315,7 +326,7 @@ export default function MyCourses() {
                         {getProgressLabel(visualProgress)}
                       </div>
                       <h3 className="mt-4 text-xl font-semibold tracking-tight text-slate-900">{course.title}</h3>
-                      <p className="mt-1 text-sm text-slate-500">Instructor: {instructorName}</p>
+                      <p className="mt-1 break-words text-sm text-slate-500">Instructor: {instructorName}</p>
                     </div>
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/80 bg-white/90 text-emerald-700 shadow-sm">
                       <LuBookOpen className="h-5 w-5" />

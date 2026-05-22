@@ -13,7 +13,7 @@ const EMPTY_FORM = {
   description: "",
   due_date: "",
   allow_late_submissions: false,
-  points: 100,
+  points: "100",
   topic: "",
   link: "",
   file: null,
@@ -39,6 +39,29 @@ const parseMetadata = (value) => {
   } catch {
     return {};
   }
+};
+
+const sanitizePointsDraft = (value) => {
+  const raw = String(value ?? "");
+  if (raw === "") return "";
+  if (!/^\d*\.?\d*$/.test(raw)) return null;
+  return raw;
+};
+
+const normalizePointsForDisplay = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return "";
+  if (Number.isInteger(parsed)) return String(parsed);
+  return String(parsed);
+};
+
+const parsePointsForSubmit = (value) => {
+  const normalized = normalizePointsForDisplay(value);
+  if (normalized === "") return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 };
 
 const buildMetadataByType = (typeKey, form) => {
@@ -92,7 +115,7 @@ export default function ClassworkBuilderPage({ typeKey = "assignment", mode = "c
           description: activity?.description || "",
           due_date: toDateTimeLocalInput(activity?.due_date),
           allow_late_submissions: Boolean(activity?.allow_late_submissions),
-          points: Number(activity?.points ?? 100),
+          points: normalizePointsForDisplay(activity?.points ?? 100) || "100",
           topic: activity?.topic || "",
           link: activity?.link || "",
           file: null,
@@ -120,6 +143,16 @@ export default function ClassworkBuilderPage({ typeKey = "assignment", mode = "c
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handlePointsChange = (value) => {
+    const sanitized = sanitizePointsDraft(value);
+    if (sanitized === null) return;
+    onFieldChange("points", sanitized);
+  };
+
+  const handlePointsBlur = () => {
+    onFieldChange("points", normalizePointsForDisplay(formData.points));
+  };
+
   const saveActivity = async () => {
     if (!String(formData.title || "").trim()) {
       setError("Title is required.");
@@ -128,6 +161,13 @@ export default function ClassworkBuilderPage({ typeKey = "assignment", mode = "c
     if (!selectedTypeId) {
       setError("Classwork type is not available. Please refresh and try again.");
       return;
+    }
+    if (typeKey !== "material") {
+      const parsedPoints = parsePointsForSubmit(formData.points);
+      if (parsedPoints === null) {
+        setError("Points are required.");
+        return;
+      }
     }
 
     setSaving(true);
@@ -145,7 +185,7 @@ export default function ClassworkBuilderPage({ typeKey = "assignment", mode = "c
     payload.append("project_group_enabled", String(Boolean(formData.project_group_enabled)));
     payload.append("classwork_metadata", JSON.stringify(buildMetadataByType(typeKey, formData)));
     if (typeKey !== "material") {
-      payload.append("points", String(Number(formData.points || 0)));
+      payload.append("points", String(parsePointsForSubmit(formData.points) ?? 0));
     } else {
       payload.append("points", "0");
       payload.append("grading_type", "none");
@@ -243,8 +283,10 @@ export default function ClassworkBuilderPage({ typeKey = "assignment", mode = "c
                 <input
                   type="number"
                   min={0}
+                  step="1"
                   value={formData.points}
-                  onChange={(event) => onFieldChange("points", Number(event.target.value || 0))}
+                  onChange={(event) => handlePointsChange(event.target.value)}
+                  onBlur={handlePointsBlur}
                   className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 />
               </label>

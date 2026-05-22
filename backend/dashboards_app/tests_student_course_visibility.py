@@ -71,6 +71,9 @@ class StudentCourseVisibilityTests(TestCase):
         self.assertEqual(response.data[0]["students_count"], 1)
         self.assertEqual(response.data[0]["category"]["id"], self.category.id)
         self.assertEqual(response.data[0]["category"]["name"], self.category.name)
+        self.assertEqual(response.data[0]["instructor_name"], "instructor_visibility")
+        self.assertEqual(response.data[0]["instructor_info"]["id"], self.instructor.id)
+        self.assertEqual(response.data[0]["instructor_info"]["name"], "instructor_visibility")
 
     def test_reapproving_request_does_not_duplicate_enrollment(self):
         request_row = self._create_pending_request()

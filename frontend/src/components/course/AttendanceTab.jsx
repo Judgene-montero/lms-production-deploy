@@ -764,19 +764,19 @@ function AttendanceTab({ courseId, isInstructor }) {
             <p className="text-sm text-gray-600">Session-based attendance with overlay preview and grading points.</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-stretch gap-2">
             <input
               type="date"
               value={sessionDateFilter}
               onChange={(event) => setSessionDateFilter(event.target.value)}
-              className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-700"
+              className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-700 sm:w-auto"
               title="Filter sessions by date"
             />
             <button
               type="button"
               onClick={() => fetchData({ silent: true })}
               disabled={refreshing}
-              className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+              className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 sm:w-auto"
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
@@ -784,7 +784,7 @@ function AttendanceTab({ courseId, isInstructor }) {
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                className="w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 sm:w-auto"
               >
                 Create Session
               </button>
@@ -794,7 +794,7 @@ function AttendanceTab({ courseId, isInstructor }) {
                 type="button"
                 onClick={quickStartTodaySession}
                 disabled={saving}
-                className="rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                className="w-full rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 sm:w-auto"
               >
                 {saving ? "Preparing..." : "Quick Start Today"}
               </button>
@@ -803,7 +803,7 @@ function AttendanceTab({ courseId, isInstructor }) {
               <button
                 type="button"
                 onClick={() => setShowSettings(true)}
-                className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50"
+                className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 sm:w-auto"
                 title="Attendance points settings"
               >
                 Points Settings
@@ -814,7 +814,7 @@ function AttendanceTab({ courseId, isInstructor }) {
                 type="button"
                 onClick={openEditorForSelected}
                 disabled={!selectedSessionActivity}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 sm:w-auto"
               >
                 Edit Session
               </button>
@@ -824,7 +824,7 @@ function AttendanceTab({ courseId, isInstructor }) {
                 type="button"
                 onClick={exportPointsSheet}
                 disabled={!selectedSessionActivity}
-                className="rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
+                className="w-full rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60 sm:w-auto"
               >
                 Export Points CSV
               </button>
@@ -842,9 +842,9 @@ function AttendanceTab({ courseId, isInstructor }) {
       </section>
 
       <section className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <label className="text-sm font-medium text-gray-700">Session</label>
-          <select value={selectedSessionId} onChange={(event) => setSelectedSessionId(event.target.value)} className="min-w-[260px] rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <select value={selectedSessionId} onChange={(event) => setSelectedSessionId(event.target.value)} className="w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm sm:min-w-[260px] sm:max-w-full">
             <option value="">Select attendance session</option>
             {filteredSessions.map((session) => (
               <option key={session.id} value={session.id}>
@@ -861,9 +861,12 @@ function AttendanceTab({ courseId, isInstructor }) {
             {students.slice(0, 9).map((student) => {
               const statusValue = attendanceForSelectedSession[String(student.id)]?.status || "unmarked";
               return (
-                <article key={student.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-                  <p className="text-sm font-medium text-gray-800">{student.username}</p>
-                  <span className={`rounded-md px-2 py-1 text-xs font-semibold ${statusChipClass[statusValue] || statusChipClass.unmarked}`}>{statusShort[statusValue] || "-"}</span>
+                <article key={student.id} className="flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-medium text-gray-800">{student.username}</p>
+                    <p className="text-xs text-gray-500">{student.school_id || "No school id"}</p>
+                  </div>
+                  <span className={`self-start rounded-md px-2 py-1 text-xs font-semibold sm:self-auto ${statusChipClass[statusValue] || statusChipClass.unmarked}`}>{statusShort[statusValue] || "-"}</span>
                 </article>
               );
             })}
@@ -902,14 +905,14 @@ function AttendanceTab({ courseId, isInstructor }) {
       />
 
       {showSettings && isInstructor && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-3">
-          <section className="w-full max-w-xl rounded-2xl border border-amber-200 bg-white p-4 shadow-xl">
-            <div className="flex items-center justify-between gap-2">
+        <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-900/45 p-2 sm:p-3">
+          <section className="mx-auto my-3 w-full max-w-xl rounded-2xl border border-amber-200 bg-white p-4 shadow-xl sm:my-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h5 className="text-base font-semibold text-amber-900">Attendance Points Settings</h5>
-              <button type="button" onClick={() => setShowSettings(false)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">Close</button>
+              <button type="button" onClick={() => setShowSettings(false)} className="w-full rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 sm:w-auto">Close</button>
             </div>
             <p className="mt-1 text-xs text-gray-600">Instructor-defined base points are applied per status and exported in CSV sheets.</p>
-            <div className="mt-3 grid gap-2 md:grid-cols-4">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 md:grid-cols-4">
               {ATTENDANCE_OPTIONS.map((option) => (
                 <label key={`settings-${option.value}`} className="text-xs font-medium text-gray-700">{option.label}
                   <input type="number" step="0.01" value={statusPoints[option.value]} onChange={(event) => setStatusPoints((prev) => ({ ...prev, [option.value]: Number(event.target.value || 0) }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm" />
@@ -920,9 +923,9 @@ function AttendanceTab({ courseId, isInstructor }) {
               <input type="checkbox" checked={autoApplyStatusPoints} onChange={(event) => setAutoApplyStatusPoints(event.target.checked)} />
               Auto-apply base points when status changes
             </label>
-            <div className="mt-3 flex justify-end gap-2">
-              <button type="button" onClick={applyStatusPointsToAll} className="rounded border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-50">Apply Base Points To Current Session</button>
-              <button type="button" onClick={() => setShowSettings(false)} className="rounded bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700">Done</button>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={applyStatusPointsToAll} className="w-full rounded border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 sm:w-auto">Apply Base Points To Current Session</button>
+              <button type="button" onClick={() => setShowSettings(false)} className="w-full rounded bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 sm:w-auto">Done</button>
             </div>
           </section>
         </div>
