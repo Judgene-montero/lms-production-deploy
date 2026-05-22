@@ -4181,6 +4181,33 @@ def _is_quiz_activity(activity):
     return str(getattr(activity.activity_type, "name", "") or "").lower() == "quiz"
 
 
+def _get_quiz_submission_deadline(activity):
+    deadlines = [
+        value
+        for value in [getattr(activity, "due_date", None), getattr(activity, "availability_end", None)]
+        if value is not None
+    ]
+    if not deadlines:
+        return None
+    return min(deadlines)
+
+
+def _is_quiz_closed(activity, now=None):
+    deadline = _get_quiz_submission_deadline(activity)
+    if deadline is None:
+        return False
+    current_time = now or timezone.now()
+    return current_time > deadline
+
+
+def _quiz_closed_payload(activity):
+    payload = {"error": "This quiz is already closed."}
+    deadline = _get_quiz_submission_deadline(activity)
+    if deadline is not None:
+        payload["closed_at"] = deadline
+    return payload
+
+
 def _normalize_submitted_answers(raw_answers):
     if isinstance(raw_answers, dict):
         normalized = []
@@ -5701,8 +5728,11 @@ def quiz_detail(request, course_id, activity_id):
     if str(activity.publish_state or "").lower() != CourseActivity.PUBLISH_STATE_PUBLISHED:
         return Response({"error": "This assessment is not currently available."}, status=400)
 
+    now = timezone.now()
+    is_closed = _is_quiz_closed(activity, now=now)
     attempts_qs = QuizAttempt.objects.filter(quiz=activity, student=request.user).order_by("-started_at")
     latest_attempt = attempts_qs.first()
+    latest_submitted_attempt = attempts_qs.filter(submitted_at__isnull=False).first()
     if latest_attempt and latest_attempt.is_locked:
         return Response(
             {
@@ -5722,8 +5752,12 @@ def quiz_detail(request, course_id, activity_id):
     active_attempt = None
     if requested_attempt_id:
         active_attempt = attempts_qs.filter(id=requested_attempt_id).first()
-    if active_attempt is None:
+    if active_attempt is None and not is_closed:
         active_attempt = attempts_qs.filter(submitted_at__isnull=True).first()
+    if active_attempt and active_attempt.submitted_at:
+        active_attempt = None
+    if is_closed:
+        active_attempt = None
     if active_attempt and active_attempt.is_locked:
         return Response(
             {
@@ -5788,6 +5822,12 @@ def quiz_detail(request, course_id, activity_id):
         "requires_consent": True,
         "show_score_immediately": bool(getattr(activity, "show_score_immediately", False)),
         "allow_answer_review": bool(getattr(activity, "allow_answer_review", False)),
+        "due_date": activity.due_date,
+        "submission_deadline": _get_quiz_submission_deadline(activity),
+        "is_closed": is_closed,
+        "closed_message": "This quiz is already closed." if is_closed else "",
+        "has_submitted_attempt": bool(latest_submitted_attempt),
+        "latest_submitted_attempt_id": latest_submitted_attempt.id if latest_submitted_attempt else None,
     }
     return Response(data)
 
@@ -5913,8 +5953,8 @@ def quiz_start(request, course_id, activity_id):
         now = timezone.now()
         if activity.availability_start and now < activity.availability_start:
             return Response({"error": "This assessment is not yet available."}, status=400)
-        if activity.availability_end and now > activity.availability_end:
-            return Response({"error": "This assessment has already closed."}, status=400)
+        if _is_quiz_closed(activity, now=now):
+            return Response(_quiz_closed_payload(activity), status=403)
 
         raw_questions = _load_quiz_questions_for_runtime(activity)
         questions = _validate_and_normalize_quiz_questions(raw_questions)
@@ -6145,6 +6185,8 @@ def quiz_submit(request, course_id, activity_id):
             return Response({"error": "Quiz has no questions configured"}, status=400)
 
         now = timezone.now()
+        if _is_quiz_closed(activity, now=now):
+            return Response(_quiz_closed_payload(activity), status=403)
         elapsed_seconds = int(max((now - attempt.started_at).total_seconds(), 0))
         time_limit = int(activity.quiz_time_limit_seconds or 600)
         if elapsed_seconds > time_limit:

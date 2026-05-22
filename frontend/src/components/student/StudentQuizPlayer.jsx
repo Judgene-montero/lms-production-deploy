@@ -60,7 +60,30 @@ const editorExtensionsByLanguage = {
   java: [java()],
 };
 
-export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onAttemptsLoaded }) {
+const getLatestSubmittedAttempt = (attempts = []) => {
+  const submitted = (Array.isArray(attempts) ? attempts : []).filter((item) => item?.submitted_at);
+  if (!submitted.length) return null;
+  return [...submitted].sort(
+    (left, right) => new Date(right.submitted_at).getTime() - new Date(left.submitted_at).getTime()
+  )[0];
+};
+
+const getFriendlyQuizErrorMessage = (requestError, fallbackMessage) => {
+  const rawMessage = String(requestError?.message || "").trim();
+  if (!rawMessage) return fallbackMessage;
+  if (/^\s*<!doctype/i.test(rawMessage) || /^\s*<html/i.test(rawMessage)) return fallbackMessage;
+  if (/^(GET|POST|PUT|PATCH|DELETE)\s.+\sfailed$/i.test(rawMessage)) return fallbackMessage;
+  return rawMessage;
+};
+
+const formatAttemptDateTime = (value) => {
+  if (!value) return "Not available";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Not available";
+  return parsed.toLocaleString();
+};
+
+export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onAttemptsLoaded, onReviewAttempt }) {
   const [quiz, setQuiz] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -173,17 +196,20 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
         typeof data?.current_attempt === "object"
           ? data?.current_attempt?.id
           : data?.current_attempt;
-      const derivedCurrentAttempt =
-        nextAttempts.find((item) => item && Number(item.id) === Number(payloadCurrentAttemptId)) ||
-        nextAttempts.find((item) => item && !item.submitted_at) ||
-        null;
+      const explicitCurrentAttempt =
+        nextAttempts.find((item) => item && Number(item.id) === Number(payloadCurrentAttemptId)) || null;
+      const fallbackOpenAttempt =
+        payloadCurrentAttemptId == null && !data?.is_closed
+          ? nextAttempts.find((item) => item && !item.submitted_at) || null
+          : null;
+      const resolvedCurrentAttempt = explicitCurrentAttempt || fallbackOpenAttempt;
       const resolvedAttemptId =
-        activeAttemptId || payloadCurrentAttemptId || data?.attempt_id || derivedCurrentAttempt?.id || null;
+        activeAttemptId || payloadCurrentAttemptId || data?.attempt_id || resolvedCurrentAttempt?.id || null;
       const resolvedMaxAttempts = Math.max(1, Number(data?.max_attempts || activity?.max_attempts || 1));
 
       setQuiz(data);
       setAttempts(nextAttempts);
-      setCurrentAttempt(derivedCurrentAttempt);
+      setCurrentAttempt(resolvedCurrentAttempt);
       setAttemptId(resolvedAttemptId);
       setMaxAttempts(resolvedMaxAttempts);
 
@@ -191,7 +217,7 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
         onAttemptsLoaded(nextAttempts);
       }
 
-      if (activateSession && resolvedAttemptId) {
+      if (activateSession && resolvedAttemptId && resolvedCurrentAttempt) {
         const nextQuestions = normalizeQuestions(data?.questions || []);
         const answersKey = `quiz_answers_${courseId}_${activity?.id}_${resolvedAttemptId}`;
         let restoredAnswers = {};
@@ -208,7 +234,7 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
         setAnswers(restoredAnswers);
         setCurrentIndex(0);
         setQuizActive(true);
-        const startedAt = derivedCurrentAttempt?.started_at || fallbackStartedAt || null;
+        const startedAt = resolvedCurrentAttempt?.started_at || fallbackStartedAt || null;
         const timeLimit = Number(data?.time_limit || fallbackTimeLimit || activity?.quiz_time_limit_seconds || 600);
         hydrateTimerFromAttempt(timeLimit, startedAt);
       } else {
@@ -235,7 +261,7 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
       await loadQuizDetails({ activateSession: false });
     } catch (requestError) {
       console.error(requestError);
-      setError(requestError?.message || "Failed to load quiz details.");
+      setError(getFriendlyQuizErrorMessage(requestError, "Unable to load quiz. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -307,6 +333,10 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
 
   const confirmStartQuiz = useCallback(async () => {
     if (!courseId || !activity?.id || starting) return;
+    if (quiz?.is_closed) {
+      setError(quiz?.closed_message || "This quiz is already closed.");
+      return;
+    }
     if (quiz?.requires_consent && !consentChecked) {
       setWarning("Please acknowledge exam policies before starting.");
       return;
@@ -350,11 +380,23 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
       }
     } catch (requestError) {
       console.error(requestError);
-      setError(requestError?.message || "Unable to start quiz. Please try again.");
+      setError(getFriendlyQuizErrorMessage(requestError, "Unable to start quiz. Please try again."));
     } finally {
       setStarting(false);
     }
-  }, [activity?.id, consentChecked, courseId, loadQuizDetails, quiz?.anti_cheat_enabled, quiz?.anti_cheat_fullscreen_required, quiz?.pre_exam_message, quiz?.requires_consent, starting]);
+  }, [
+    activity?.id,
+    consentChecked,
+    courseId,
+    loadQuizDetails,
+    quiz?.anti_cheat_enabled,
+    quiz?.anti_cheat_fullscreen_required,
+    quiz?.closed_message,
+    quiz?.is_closed,
+    quiz?.pre_exam_message,
+    quiz?.requires_consent,
+    starting,
+  ]);
 
   const handleStartQuiz = useCallback(() => {
     setWarning("");
@@ -363,6 +405,10 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
 
   const handleResumeQuiz = useCallback(async () => {
     if (!currentAttempt?.id) return;
+    if (quiz?.is_closed) {
+      setError(quiz?.closed_message || "This quiz is already closed.");
+      return;
+    }
     setLoading(true);
     setError("");
     setWarning("");
@@ -378,11 +424,11 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
       });
     } catch (requestError) {
       console.error(requestError);
-      setError("Failed to load quiz details.");
+      setError(getFriendlyQuizErrorMessage(requestError, "Unable to load quiz. Please try again."));
     } finally {
       setLoading(false);
     }
-  }, [currentAttempt?.id, currentAttempt?.started_at, loadQuizDetails, quiz?.time_limit]);
+  }, [currentAttempt?.id, currentAttempt?.started_at, loadQuizDetails, quiz?.closed_message, quiz?.is_closed, quiz?.time_limit]);
 
   const answeredCount = useMemo(
     () =>
@@ -397,6 +443,10 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
       if (submitLockRef.current) return;
       if (!quiz?.id || !attemptId) {
         setWarning("Quiz attempt is not ready yet. Please wait a moment.");
+        return;
+      }
+      if (quiz?.is_closed) {
+        setError(quiz?.closed_message || "This quiz is already closed.");
         return;
       }
 
@@ -459,7 +509,7 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
         }
       } catch (requestError) {
         console.error(requestError);
-        const message = requestError?.message || "Quiz submission failed.";
+        const message = getFriendlyQuizErrorMessage(requestError, "Unable to submit quiz. Please try again.");
         if (String(message).toLowerCase().includes("force-submitted") || String(message).toLowerCase().includes("locked")) {
           stopTimer();
           setQuizActive(false);
@@ -473,7 +523,20 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
         submitLockRef.current = false;
       }
     },
-    [activity?.id, answers, attemptId, confirmed, courseId, loadQuizDetails, onSubmitted, questions, quiz?.id, stopTimer]
+    [
+      activity?.id,
+      answers,
+      attemptId,
+      confirmed,
+      courseId,
+      loadQuizDetails,
+      onSubmitted,
+      questions,
+      quiz?.closed_message,
+      quiz?.id,
+      quiz?.is_closed,
+      stopTimer,
+    ]
   );
 
   useEffect(() => {
@@ -517,8 +580,27 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
   }
 
   const totalAttempts = Array.isArray(attempts) ? attempts.length : 0;
-  const canStartNewAttempt = !currentAttempt && totalAttempts < maxAttempts;
-  const maxAttemptsReached = !currentAttempt && totalAttempts >= maxAttempts;
+  const submittedAttemptsCount = attempts.filter((item) => item?.submitted_at).length;
+  const latestSubmittedAttempt = getLatestSubmittedAttempt(attempts);
+  const quizClosed = Boolean(quiz?.is_closed);
+  const canResumeCurrentAttempt = Boolean(currentAttempt) && !quizClosed;
+  const canStartNewAttempt = !quizClosed && !currentAttempt && submittedAttemptsCount < maxAttempts;
+  const maxAttemptsReached = !quizClosed && !currentAttempt && submittedAttemptsCount >= maxAttempts;
+  const reviewAvailable = Boolean(
+    latestSubmittedAttempt?.allow_answer_review &&
+      latestSubmittedAttempt?.status === "graded" &&
+      latestSubmittedAttempt?.id
+  );
+  const latestAttemptHasScore =
+    latestSubmittedAttempt?.score !== null &&
+    latestSubmittedAttempt?.score !== undefined &&
+    latestSubmittedAttempt?.total_points !== null &&
+    latestSubmittedAttempt?.total_points !== undefined;
+  const submittedStateMessage = latestSubmittedAttempt
+    ? latestSubmittedAttempt?.status === "pending_review"
+      ? "You have already submitted this quiz. Waiting for grading."
+      : "You have already submitted this quiz."
+    : "";
 
   return (
     <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -543,11 +625,27 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
 
       {!quizActive ? (
         <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700">
-          {currentAttempt ? <p>You have an active quiz attempt ready to resume.</p> : null}
+          {quizClosed ? (
+            <p className="text-red-600">{quiz?.closed_message || "This quiz is already closed."}</p>
+          ) : null}
+          {canResumeCurrentAttempt ? <p>You have an active quiz attempt ready to resume.</p> : null}
           {canStartNewAttempt ? <p>You can start a new quiz attempt.</p> : null}
+          {latestSubmittedAttempt ? (
+            <div className="mt-3 space-y-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              <p>{submittedStateMessage}</p>
+              <p>Submitted: {formatAttemptDateTime(latestSubmittedAttempt.submitted_at)}</p>
+              {latestAttemptHasScore ? (
+                <p>
+                  Score: {Number(latestSubmittedAttempt.score || 0)} / {Number(latestSubmittedAttempt.total_points || 0)}
+                </p>
+              ) : (
+                <p>Submitted. Waiting for grading.</p>
+              )}
+            </div>
+          ) : null}
           {maxAttemptsReached ? <p className="text-red-600">Maximum attempts reached</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            {currentAttempt ? (
+            {canResumeCurrentAttempt ? (
               <button
                 type="button"
                 onClick={handleResumeQuiz}
@@ -565,6 +663,15 @@ export default function StudentQuizPlayer({ courseId, activity, onSubmitted, onA
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60"
               >
                 {starting ? "Starting..." : "Start Quiz"}
+              </button>
+            ) : null}
+            {reviewAvailable && typeof onReviewAttempt === "function" ? (
+              <button
+                type="button"
+                onClick={() => onReviewAttempt(latestSubmittedAttempt)}
+                className="rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+              >
+                View Result
               </button>
             ) : null}
           </div>

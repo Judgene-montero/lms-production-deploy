@@ -61,6 +61,10 @@ export default function StudentExamTakePage() {
           onSubmitted={(result) => {
             setSubmissionResult(result || null);
           }}
+          onReviewAttempt={(attempt) => {
+            if (!attempt?.id) return;
+            navigate(`/student/dashboard/my-courses/${courseId}/exam/${activityId}/review?attempt_id=${attempt.id}`);
+          }}
         />
       </div>
     </div>

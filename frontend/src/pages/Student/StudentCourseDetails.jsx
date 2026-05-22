@@ -170,6 +170,28 @@ const getInstructorDisplayName = (course = {}) => {
 
 const formatDueText = (value) => formatDateTime(value, "No due date");
 
+const getQuizSubmissionDeadline = (activity) =>
+  activity?.submission_deadline || activity?.availability_end || activity?.due_date || null;
+
+const isQuizClosedForStudent = (activity) => {
+  if (activity?.is_closed) return true;
+  const deadline = getQuizSubmissionDeadline(activity);
+  if (!deadline) return false;
+  const parsed = new Date(deadline);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.getTime() < Date.now();
+};
+
+const getLatestQuizAttempt = (activity) => {
+  const attempts = Array.isArray(activity?.quiz_attempts) ? activity.quiz_attempts : [];
+  if (!attempts.length) return null;
+  return [...attempts].sort((left, right) => {
+    const rightTimestamp = new Date(right?.submitted_at || right?.started_at || 0).getTime();
+    const leftTimestamp = new Date(left?.submitted_at || left?.started_at || 0).getTime();
+    return rightTimestamp - leftTimestamp;
+  })[0];
+};
+
 export default function StudentCourseDetails() {
   const { courseId } = useParams();
   const location = useLocation();
@@ -964,15 +986,61 @@ export default function StudentCourseDetails() {
               {quizActivities.map((quiz) => {
                 const submission = getSubmissionForActivity(quiz);
                 const latestAttempt = getLatestSubmittedQuizAttempt(quiz);
+                const latestAnyAttempt = getLatestQuizAttempt(quiz);
                 const reviewEnabled = canReviewLatestQuizAttempt(quiz);
+                const quizClosed = isQuizClosedForStudent(quiz);
+                const submittedAttemptsCount = Array.isArray(quiz?.quiz_attempts)
+                  ? quiz.quiz_attempts.filter((attempt) => attempt?.submitted_at).length
+                  : 0;
+                const hasOpenAttempt = Boolean(
+                  Array.isArray(quiz?.quiz_attempts) &&
+                    quiz.quiz_attempts.some((attempt) => attempt && !attempt.submitted_at)
+                );
+                const maxAttempts = Math.max(1, Number(quiz?.max_attempts || 1));
+                const hasSubmittedAttempt = Boolean(latestAttempt || submission);
+                const quizStatusText = latestAttempt?.status === "pending_review"
+                  ? "Submitted"
+                  : hasSubmittedAttempt
+                  ? "Submitted"
+                  : quizClosed
+                  ? "Closed"
+                  : "Pending";
+                const actionLabel = hasSubmittedAttempt
+                  ? "View Result"
+                  : hasOpenAttempt && !quizClosed
+                  ? "Resume Quiz"
+                  : quizClosed
+                  ? "Quiz Closed"
+                  : submittedAttemptsCount >= maxAttempts
+                  ? "Attempts Used"
+                  : "Start Quiz";
+                const actionDisabled = !hasSubmittedAttempt && (quizClosed || submittedAttemptsCount >= maxAttempts);
+                const actionHandler = () => {
+                  if (actionDisabled) return;
+                  if (reviewEnabled && latestAttempt?.id) {
+                    navigate(`/student/dashboard/my-courses/${courseId}/exam/${quiz.id}/review?attempt_id=${latestAttempt.id}`);
+                    return;
+                  }
+                  openStudentActivity(quiz);
+                };
                 return (
                   <article key={quiz.id} className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-emerald-50/30 p-5 shadow-sm transition hover:border-emerald-200 hover:shadow-md">
                     <h4 className="text-base font-semibold text-gray-900">{quiz.title}</h4>
-                    <p className="mt-1 text-sm text-gray-500">Due: {formatDueText(quiz.due_date)}</p>
+                    <p className="mt-1 text-sm text-gray-500">Due: {formatDueText(getQuizSubmissionDeadline(quiz))}</p>
                     <p className="mt-2 text-sm text-gray-700">
-                      Status: {latestAttempt?.status === "pending_review" ? "Submitted" : submission ? "Submitted" : "Pending"} | Points: {getDisplayTotalPoints(quiz)}
+                      Status: {quizStatusText} | Points: {getDisplayTotalPoints(quiz)}
                     </p>
                     <p className="mt-1 text-sm text-gray-700">Score: {getScoreText(quiz)}</p>
+                    {quizClosed && !hasSubmittedAttempt ? (
+                      <p className="mt-2 text-sm text-red-600">This quiz is already closed.</p>
+                    ) : null}
+                    {latestAnyAttempt?.submitted_at && !reviewEnabled ? (
+                      <p className="mt-2 text-sm text-gray-600">
+                        {latestAnyAttempt?.status === "pending_review"
+                          ? "Submitted. Waiting for grading."
+                          : "Submitted attempt available in read-only mode."}
+                      </p>
+                    ) : null}
                     {reviewEnabled ? (
                       <p className="mt-2 text-sm text-emerald-700">
                         Detailed review is available for this graded attempt.
@@ -981,10 +1049,11 @@ export default function StudentCourseDetails() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => openStudentActivity(quiz)}
-                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
+                        onClick={actionHandler}
+                        disabled={actionDisabled}
+                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                       >
-                        {submission ? "View Quiz" : "Start Quiz"}
+                        {actionLabel}
                       </button>
                       {reviewEnabled ? (
                         <button

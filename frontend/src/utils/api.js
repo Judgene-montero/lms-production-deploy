@@ -23,6 +23,23 @@ const firstValidationMessage = (data) => {
   return "";
 };
 
+const isHtmlErrorDocument = (value) => {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized.startsWith("<!doctype") || normalized.startsWith("<html");
+};
+
+const buildRequestError = (method, endpoint, error) => {
+  const responseData = error?.response?.data;
+  const status = error?.response?.status;
+  const detail = firstValidationMessage(responseData);
+  const safeDetail = detail && !isHtmlErrorDocument(detail) ? detail : `${method} ${endpoint} failed`;
+  const wrapped = new Error(safeDetail);
+  wrapped.cause = responseData;
+  wrapped.status = status;
+  return wrapped;
+};
+
 /* ------------------------------ REGISTER ------------------------------ */
 export const registerUser = async (userData) => {
   try {
@@ -67,7 +84,7 @@ export const authGet = async (endpoint) => {
     const res = await axiosInstance.get(endpoint);
     return res.data;
   } catch (error) {
-    throw new Error(error?.response?.data?.detail || `GET ${endpoint} failed`);
+    throw buildRequestError("GET", endpoint, error);
   }
 };
 
@@ -77,11 +94,7 @@ export const authPost = async (endpoint, data) => {
     const res = await axiosInstance.post(endpoint, data);
     return res.data;
   } catch (error) {
-    const responseData = error?.response?.data;
-    const detail = firstValidationMessage(responseData) || `POST ${endpoint} failed`;
-    const wrapped = new Error(detail);
-    wrapped.cause = responseData;
-    throw wrapped;
+    throw buildRequestError("POST", endpoint, error);
   }
 };
 
@@ -91,11 +104,7 @@ export const authPut = async (endpoint, data) => {
     const res = await axiosInstance.put(endpoint, data);
     return res.data;
   } catch (error) {
-    const responseData = error?.response?.data;
-    const detail = firstValidationMessage(responseData) || `PUT ${endpoint} failed`;
-    const wrapped = new Error(detail);
-    wrapped.cause = responseData;
-    throw wrapped;
+    throw buildRequestError("PUT", endpoint, error);
   }
 };
 
@@ -105,11 +114,7 @@ export const authPatch = async (endpoint, data) => {
     const res = await axiosInstance.patch(endpoint, data);
     return res.data;
   } catch (error) {
-    const responseData = error?.response?.data;
-    const detail = firstValidationMessage(responseData) || `PATCH ${endpoint} failed`;
-    const wrapped = new Error(detail);
-    wrapped.cause = responseData;
-    throw wrapped;
+    throw buildRequestError("PATCH", endpoint, error);
   }
 };
 
