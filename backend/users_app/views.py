@@ -33,6 +33,11 @@ from .serializers import (
 )
 from rest_framework.permissions import IsAuthenticated
 
+try:
+    from cloudinary import uploader as cloudinary_uploader
+except ImportError:  # pragma: no cover
+    cloudinary_uploader = None
+
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -40,15 +45,11 @@ logger = logging.getLogger(__name__)
 def _build_avatar_debug_payload(user, request):
     avatar_field = getattr(user, "avatar", None)
     avatar_name = getattr(avatar_field, "name", "") if avatar_field else ""
-    avatar_url = None
+    avatar_url = user.get_avatar_url(request=request)
     expected_file_path = ""
     file_exists = False
 
     if avatar_field:
-        try:
-            avatar_url = request.build_absolute_uri(avatar_field.url)
-        except Exception:
-            avatar_url = None
         try:
             expected_file_path = str(avatar_field.path)
             file_exists = Path(expected_file_path).exists()
@@ -58,10 +59,12 @@ def _build_avatar_debug_payload(user, request):
 
     return {
         "avatar": avatar_name or None,
+        "avatar_remote_url": getattr(user, "avatar_remote_url", None),
         "avatar_url": avatar_url,
         "media_url": settings.MEDIA_URL,
         "media_root": str(settings.MEDIA_ROOT),
         "serve_media_files": bool(getattr(settings, "SERVE_MEDIA_FILES", False)),
+        "cloudinary_avatars_enabled": bool(getattr(settings, "CLOUDINARY_AVATARS_ENABLED", False)),
         "expected_file_path": expected_file_path or None,
         "file_exists": file_exists,
     }
@@ -262,6 +265,8 @@ class UserProfileView(APIView):
         else:
             role = getattr(user, "role", "student")  # default to "student" if not set
 
+        avatar_url = user.get_avatar_url(request=request)
+
         return Response({
             "id": user.id,
             "username": user.username,
@@ -280,7 +285,8 @@ class UserProfileView(APIView):
             "bio": getattr(user, "bio", ""),
             "phone": getattr(user, "phone", ""),
             "department": getattr(user, "department", ""),
-            "avatar": request.build_absolute_uri(user.avatar.url) if getattr(user, "avatar", None) else None,
+            "avatar": avatar_url,
+            "avatar_url": avatar_url,
             "notify_assignment_submission": getattr(user, "notify_assignment_submission", True),
             "notify_quiz_completed": getattr(user, "notify_quiz_completed", True),
             "notify_student_join_course": getattr(user, "notify_student_join_course", True),
@@ -348,6 +354,64 @@ def _compute_profile_complete(user):
     return all(bool(value) for value in required_for_all) and student_ok
 
 
+def _upload_avatar_to_cloudinary(user, avatar_file):
+    if not getattr(settings, "CLOUDINARY_AVATARS_ENABLED", False) or cloudinary_uploader is None:
+        return None
+
+    folder = f"enhance-lms/avatars/{getattr(user, 'role', 'users')}"
+    public_id = f"user-{user.id}-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
+    upload_result = cloudinary_uploader.upload(
+        avatar_file,
+        folder=folder,
+        public_id=public_id,
+        overwrite=True,
+        resource_type="image",
+        secure=True,
+    )
+    secure_url = upload_result.get("secure_url")
+    if not secure_url:
+        raise ValueError("Cloudinary upload did not return a secure_url.")
+
+    return {
+        "secure_url": secure_url,
+        "public_id": upload_result.get("public_id"),
+    }
+
+
+def _save_avatar(user, avatar_file):
+    upload_timestamp = timezone.now().isoformat()
+    cloudinary_result = _upload_avatar_to_cloudinary(user, avatar_file)
+
+    if cloudinary_result:
+        user.avatar_remote_url = cloudinary_result["secure_url"]
+        user.save(update_fields=["avatar_remote_url"])
+        logger.info(
+            "Avatar uploaded to Cloudinary.",
+            extra={
+                "user_id": user.id,
+                "role": getattr(user, "role", ""),
+                "cloudinary_public_id": cloudinary_result.get("public_id"),
+            },
+        )
+        return upload_timestamp
+
+    user.avatar = avatar_file
+    user.avatar_remote_url = None
+    user.save(update_fields=["avatar", "avatar_remote_url"])
+    user.refresh_from_db(fields=["avatar", "avatar_remote_url"])
+    logger.info(
+        "Avatar saved locally.",
+        extra={
+            "user_id": user.id,
+            "role": getattr(user, "role", ""),
+            "avatar_name": getattr(user.avatar, "name", ""),
+            "avatar_path": getattr(user.avatar, "path", ""),
+            "file_exists": Path(getattr(user.avatar, "path", "")).exists() if getattr(user.avatar, "path", "") else False,
+        },
+    )
+    return upload_timestamp
+
+
 class InstructorProfileAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [permissions.IsAuthenticated]
@@ -409,24 +473,23 @@ class InstructorProfileAvatarUploadAPIView(APIView):
             return Response({"error": "avatar file is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
-        user.avatar = avatar
-        user.save(update_fields=["avatar"])
-        user.refresh_from_db(fields=["avatar"])
-        logger.info(
-            "Instructor avatar saved.",
-            extra={
-                "user_id": user.id,
-                "avatar_name": getattr(user.avatar, "name", ""),
-                "avatar_path": getattr(user.avatar, "path", ""),
-                "file_exists": Path(getattr(user.avatar, "path", "")).exists() if getattr(user.avatar, "path", "") else False,
-            },
-        )
+        try:
+            upload_timestamp = _save_avatar(user, avatar)
+        except Exception:
+            logger.exception(
+                "Instructor avatar upload failed.",
+                extra={"user_id": user.id, "role": getattr(user, "role", "")},
+            )
+            return Response(
+                {"error": "Unable to upload avatar right now. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
         serializer = InstructorProfileSerializer(user, context={"request": request})
         avatar_payload = serializer.data
         return Response(
             {
                 "message": "Avatar updated.",
-                "avatar_updated_at": timezone.now().isoformat(),
+                "avatar_updated_at": upload_timestamp,
                 "profile": avatar_payload,
                 **avatar_payload,
             },
@@ -553,24 +616,23 @@ class StudentProfileAvatarUploadAPIView(APIView):
             return Response({"error": "avatar file is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
-        user.avatar = avatar
-        user.save(update_fields=["avatar"])
-        user.refresh_from_db(fields=["avatar"])
-        logger.info(
-            "Student avatar saved.",
-            extra={
-                "user_id": user.id,
-                "avatar_name": getattr(user.avatar, "name", ""),
-                "avatar_path": getattr(user.avatar, "path", ""),
-                "file_exists": Path(getattr(user.avatar, "path", "")).exists() if getattr(user.avatar, "path", "") else False,
-            },
-        )
+        try:
+            upload_timestamp = _save_avatar(user, avatar)
+        except Exception:
+            logger.exception(
+                "Student avatar upload failed.",
+                extra={"user_id": user.id, "role": getattr(user, "role", "")},
+            )
+            return Response(
+                {"error": "Unable to upload avatar right now. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
         serializer = StudentProfileSerializer(user, context={"request": request})
         avatar_payload = serializer.data
         return Response(
             {
                 "message": "Avatar updated.",
-                "avatar_updated_at": timezone.now().isoformat(),
+                "avatar_updated_at": upload_timestamp,
                 "profile": avatar_payload,
                 **avatar_payload,
             },

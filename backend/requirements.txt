@@ -3,6 +3,7 @@ celery==5.4.0
 cffi==2.0.0
 charset-normalizer==3.4.6
 channels==4.2.0
+cloudinary==1.44.1
 cryptography==46.0.5
 dj-database-url==2.3.0
 Django==5.2.7

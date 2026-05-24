@@ -8,15 +8,9 @@
 
 ## Important hosting limitation
 
-This project currently stores uploaded media on the local filesystem under `backend/media/`.
+General uploaded media can still use the local filesystem under `backend/media/`, which is not durable on free or basic stateless hosting.
 
-On free or basic stateless hosting, local disk contents are not durable across deploys and restarts. That means:
-
-- existing code will still work locally
-- uploads may appear to work temporarily on Render
-- uploaded files are not guaranteed to persist long term in production
-
-For durable production media storage, move uploads to an external object store such as Cloudinary, S3, Supabase Storage, or a similar service.
+Profile avatars are now designed to use Cloudinary in production so they survive Render restarts and redeploys. If the Cloudinary environment variables are missing, avatar uploads fall back to local storage for development.
 
 ## Backend environment variables
 
@@ -28,7 +22,9 @@ Set these in Render for the Django web service:
 - `DATABASE_URL=<Render PostgreSQL connection string>`
 - `CORS_ALLOWED_ORIGINS=https://your-frontend-project.vercel.app`
 - `CSRF_TRUSTED_ORIGINS=https://your-frontend-project.vercel.app`
-- `SERVE_MEDIA_FILES=True`
+- `CLOUDINARY_CLOUD_NAME=<your-cloudinary-cloud-name>`
+- `CLOUDINARY_API_KEY=<your-cloudinary-api-key>`
+- `CLOUDINARY_API_SECRET=<your-cloudinary-api-secret>`
 
 Optional variables already supported:
 
@@ -36,6 +32,7 @@ Optional variables already supported:
 - `SECURE_SSL_REDIRECT=True`
 - `SESSION_COOKIE_SECURE=True`
 - `CSRF_COOKIE_SECURE=True`
+- `SERVE_MEDIA_FILES=True`
 - `DJANGO_CHANNEL_LAYER_BACKEND=memory`
 - `DJANGO_EMAIL_BACKEND`
 - `DJANGO_DEFAULT_FROM_EMAIL`
@@ -59,6 +56,7 @@ Set these in Vercel:
    - `collectstatic` completed
    - migrations completed in the pre-deploy step
    - gunicorn started without import errors
+   - avatar uploads return Cloudinary HTTPS URLs instead of `/media/avatars/...`
 
 ## Vercel setup
 
@@ -92,5 +90,5 @@ After both services are live:
 5. Check one or two existing API-backed pages to confirm normal UI behavior.
 6. Open the Django admin or a known authenticated endpoint to confirm database connectivity.
 7. Confirm static files load from the backend without 404 errors.
-8. If your workflow uses media uploads, upload a file and note that persistence is not guaranteed on free Render storage.
-9. Confirm uploaded avatar requests resolve to the Render backend origin, for example `https://your-backend-name.onrender.com/media/...`, not the Vercel frontend domain.
+8. Upload a profile avatar and confirm the API returns a permanent Cloudinary URL such as `https://res.cloudinary.com/...`.
+9. If your workflow uses other media uploads, note that non-Cloudinary local media persistence is still not guaranteed on free Render storage.

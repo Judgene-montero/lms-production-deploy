@@ -3,6 +3,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 
 User = get_user_model()
@@ -90,7 +91,14 @@ class ProfileFlowTests(TestCase):
         self.instructor.refresh_from_db()
         self.assertEqual(self.instructor.college, "CIT")
 
-    def test_student_avatar_upload_returns_usable_avatar_url(self):
+    @patch(
+        "users_app.views._upload_avatar_to_cloudinary",
+        return_value={
+            "secure_url": "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/student/user-1.png",
+            "public_id": "enhance-lms/avatars/student/user-1",
+        },
+    )
+    def test_student_avatar_upload_returns_cloudinary_avatar_url(self, mocked_upload):
         self.client.force_authenticate(user=self.student)
         avatar = SimpleUploadedFile("avatar.gif", TINY_GIF, content_type="image/gif")
 
@@ -104,10 +112,29 @@ class ProfileFlowTests(TestCase):
         self.assertEqual(response.data["message"], "Avatar updated.")
         self.assertIn("avatar_updated_at", response.data)
         self.assertIn("profile", response.data)
-        self.assertTrue(response.data["avatar_url"].startswith("http://testserver/media/avatars/"))
-        self.assertTrue(response.data["profile"]["avatar_url"].startswith("http://testserver/media/avatars/"))
+        self.assertEqual(
+            response.data["avatar_url"],
+            "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/student/user-1.png",
+        )
+        self.assertEqual(
+            response.data["profile"]["avatar_url"],
+            "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/student/user-1.png",
+        )
+        self.student.refresh_from_db()
+        self.assertEqual(
+            self.student.avatar_remote_url,
+            "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/student/user-1.png",
+        )
+        mocked_upload.assert_called_once()
 
-    def test_instructor_avatar_upload_returns_usable_avatar_url(self):
+    @patch(
+        "users_app.views._upload_avatar_to_cloudinary",
+        return_value={
+            "secure_url": "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/instructor/user-2.png",
+            "public_id": "enhance-lms/avatars/instructor/user-2",
+        },
+    )
+    def test_instructor_avatar_upload_returns_cloudinary_avatar_url(self, mocked_upload):
         self.client.force_authenticate(user=self.instructor)
         avatar = SimpleUploadedFile("avatar.gif", TINY_GIF, content_type="image/gif")
 
@@ -121,5 +148,17 @@ class ProfileFlowTests(TestCase):
         self.assertEqual(response.data["message"], "Avatar updated.")
         self.assertIn("avatar_updated_at", response.data)
         self.assertIn("profile", response.data)
-        self.assertTrue(response.data["avatar_url"].startswith("http://testserver/media/avatars/"))
-        self.assertTrue(response.data["profile"]["avatar_url"].startswith("http://testserver/media/avatars/"))
+        self.assertEqual(
+            response.data["avatar_url"],
+            "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/instructor/user-2.png",
+        )
+        self.assertEqual(
+            response.data["profile"]["avatar_url"],
+            "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/instructor/user-2.png",
+        )
+        self.instructor.refresh_from_db()
+        self.assertEqual(
+            self.instructor.avatar_remote_url,
+            "https://res.cloudinary.com/demo/image/upload/v1/enhance-lms/avatars/instructor/user-2.png",
+        )
+        mocked_upload.assert_called_once()

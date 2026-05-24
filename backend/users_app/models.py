@@ -70,6 +70,7 @@ class User(AbstractUser):
     profile_complete = models.BooleanField(default=False)
     middle_initial = models.CharField(max_length=1, null=True, blank=True)
     avatar = models.ImageField(upload_to="avatars/", null=True, blank=True)
+    avatar_remote_url = models.URLField(max_length=500, null=True, blank=True)
     bio = models.TextField(blank=True, default="")
     phone = models.CharField(max_length=20, blank=True, default="")
     department = models.CharField(max_length=120, blank=True, default="")
@@ -86,6 +87,22 @@ class User(AbstractUser):
     def full_name(self):
         mi = f"{self.middle_initial}." if self.middle_initial else ""
         return f"{self.last_name}, {self.first_name} {mi}".strip()
+
+    def get_avatar_url(self, request=None):
+        if self.avatar_remote_url:
+            return self.avatar_remote_url
+
+        if not self.avatar:
+            return None
+
+        try:
+            avatar_url = self.avatar.url
+        except Exception:
+            return None
+
+        if request:
+            return request.build_absolute_uri(avatar_url)
+        return avatar_url
 
     def __str__(self):
         return f"{self.full_name()} ({self.role})"

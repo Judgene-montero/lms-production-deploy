@@ -26,6 +26,11 @@ except ImportError:  # pragma: no cover
     dj_database_url = None
 
 try:
+    import cloudinary
+except ImportError:  # pragma: no cover
+    cloudinary = None
+
+try:
     from sklearn.exceptions import InconsistentVersionWarning
 except Exception:  # pragma: no cover
     InconsistentVersionWarning = None
@@ -201,6 +206,24 @@ else:
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 SERVE_MEDIA_FILES = _get_bool_env("SERVE_MEDIA_FILES", default=True)
+
+CLOUDINARY_CLOUD_NAME = _get_env("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY = _get_env("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = _get_env("CLOUDINARY_API_SECRET")
+CLOUDINARY_AVATARS_ENABLED = bool(
+    cloudinary is not None
+    and CLOUDINARY_CLOUD_NAME
+    and CLOUDINARY_API_KEY
+    and CLOUDINARY_API_SECRET
+)
+
+if CLOUDINARY_AVATARS_ENABLED:
+    cloudinary.config(
+        cloud_name=CLOUDINARY_CLOUD_NAME,
+        api_key=CLOUDINARY_API_KEY,
+        api_secret=CLOUDINARY_API_SECRET,
+        secure=True,
+    )
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

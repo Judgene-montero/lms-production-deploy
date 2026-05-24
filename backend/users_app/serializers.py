@@ -189,12 +189,7 @@ class InstructorProfileSerializer(serializers.ModelSerializer):
         return self.get_full_name(obj)
 
     def get_avatar_url(self, obj):
-        if not obj.avatar:
-            return None
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(obj.avatar.url)
-        return obj.avatar.url
+        return obj.get_avatar_url(request=self.context.get("request"))
 
 
 class InstructorNotificationSettingsSerializer(serializers.ModelSerializer):
@@ -256,12 +251,7 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         return self.get_full_name(obj)
 
     def get_avatar_url(self, obj):
-        if not obj.avatar:
-            return None
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(obj.avatar.url)
-        return obj.avatar.url
+        return obj.get_avatar_url(request=self.context.get("request"))
 
     def get_can_edit_school_id(self, obj):
         return not bool(getattr(obj, "school_id", ""))
