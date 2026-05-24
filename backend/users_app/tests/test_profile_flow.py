@@ -101,7 +101,11 @@ class ProfileFlowTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Avatar updated.")
+        self.assertIn("avatar_updated_at", response.data)
+        self.assertIn("profile", response.data)
         self.assertTrue(response.data["avatar_url"].startswith("http://testserver/media/avatars/"))
+        self.assertTrue(response.data["profile"]["avatar_url"].startswith("http://testserver/media/avatars/"))
 
     def test_instructor_avatar_upload_returns_usable_avatar_url(self):
         self.client.force_authenticate(user=self.instructor)
@@ -114,4 +118,8 @@ class ProfileFlowTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Avatar updated.")
+        self.assertIn("avatar_updated_at", response.data)
+        self.assertIn("profile", response.data)
         self.assertTrue(response.data["avatar_url"].startswith("http://testserver/media/avatars/"))
+        self.assertTrue(response.data["profile"]["avatar_url"].startswith("http://testserver/media/avatars/"))

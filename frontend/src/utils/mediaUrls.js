@@ -2,6 +2,19 @@ import { getApiBaseUrl } from "./runtimeConfig";
 
 const ABSOLUTE_URL_PATTERN = /^(https?:)?\/\//i;
 
+export const appendMediaCacheBust = (url, version) => {
+  if (!url || !version || /^(data:|blob:)/i.test(String(url))) return url;
+
+  try {
+    const parsed = new URL(String(url));
+    parsed.searchParams.set("v", String(version));
+    return parsed.toString();
+  } catch {
+    const separator = String(url).includes("?") ? "&" : "?";
+    return `${url}${separator}v=${encodeURIComponent(String(version))}`;
+  }
+};
+
 export const resolveMediaUrl = (rawUrl) => {
   if (!rawUrl) return null;
 

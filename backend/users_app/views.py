@@ -371,8 +371,18 @@ class InstructorProfileAvatarUploadAPIView(APIView):
         user = request.user
         user.avatar = avatar
         user.save(update_fields=["avatar"])
+        user.refresh_from_db(fields=["avatar"])
         serializer = InstructorProfileSerializer(user, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        avatar_payload = serializer.data
+        return Response(
+            {
+                "message": "Avatar updated.",
+                "avatar_updated_at": timezone.now().isoformat(),
+                "profile": avatar_payload,
+                **avatar_payload,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class InstructorNotificationSettingsAPIView(APIView):
@@ -496,8 +506,18 @@ class StudentProfileAvatarUploadAPIView(APIView):
         user = request.user
         user.avatar = avatar
         user.save(update_fields=["avatar"])
+        user.refresh_from_db(fields=["avatar"])
         serializer = StudentProfileSerializer(user, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        avatar_payload = serializer.data
+        return Response(
+            {
+                "message": "Avatar updated.",
+                "avatar_updated_at": timezone.now().isoformat(),
+                "profile": avatar_payload,
+                **avatar_payload,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class StudentNotificationSettingsAPIView(APIView):

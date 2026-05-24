@@ -131,13 +131,18 @@ export default function Profile() {
       const payload = new FormData();
       payload.append("avatar", avatarFile);
       const updated = await authPost("/api/student/profile/avatar/", payload);
-      setProfile(updated);
-      writeStudentProfile(updated);
+      const updatedProfile = {
+        ...(updated?.profile || updated || {}),
+        avatar_updated_at: updated?.avatar_updated_at || new Date().toISOString(),
+      };
+      setAvatarLoadError(false);
+      setProfile(updatedProfile);
+      writeStudentProfile(updatedProfile);
       setAvatarFile(null);
       setAvatarPreview("");
-      setSuccess("Avatar updated.");
-    } catch {
-      setError("Avatar upload failed.");
+      setSuccess(updated?.message || "Avatar updated.");
+    } catch (requestError) {
+      setError(requestError?.message || "Avatar upload failed.");
     } finally {
       setUploadingAvatar(false);
     }

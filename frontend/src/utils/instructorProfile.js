@@ -1,5 +1,5 @@
 import { authGet, getUserProfile } from "./api";
-import { resolveMediaUrl } from "./mediaUrls";
+import { appendMediaCacheBust, resolveMediaUrl } from "./mediaUrls";
 
 const PROFILE_STORAGE_KEY = "instructor_profile";
 const PROFILE_EVENT = "instructor-profile-updated";
@@ -24,7 +24,8 @@ export const getDefaultAvatarDataUrl = (profile = {}) => {
 export const resolveInstructorAvatar = (profile = {}) => {
   const avatar = profile?.avatar_url || profile?.avatar || profile?.profile_picture || null;
   if (!avatar) return null;
-  return resolveMediaUrl(avatar);
+  const resolvedUrl = resolveMediaUrl(avatar);
+  return appendMediaCacheBust(resolvedUrl, profile?.avatar_updated_at || profile?.avatar_version);
 };
 
 export const readCachedInstructorProfile = () => {
