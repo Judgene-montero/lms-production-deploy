@@ -1,7 +1,9 @@
 # users_app/views.py
 import logging
 import secrets
+from pathlib import Path
 import pandas as pd
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -33,6 +35,36 @@ from rest_framework.permissions import IsAuthenticated
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def _build_avatar_debug_payload(user, request):
+    avatar_field = getattr(user, "avatar", None)
+    avatar_name = getattr(avatar_field, "name", "") if avatar_field else ""
+    avatar_url = None
+    expected_file_path = ""
+    file_exists = False
+
+    if avatar_field:
+        try:
+            avatar_url = request.build_absolute_uri(avatar_field.url)
+        except Exception:
+            avatar_url = None
+        try:
+            expected_file_path = str(avatar_field.path)
+            file_exists = Path(expected_file_path).exists()
+        except Exception:
+            expected_file_path = str(Path(settings.MEDIA_ROOT) / avatar_name) if avatar_name else ""
+            file_exists = Path(expected_file_path).exists() if expected_file_path else False
+
+    return {
+        "avatar": avatar_name or None,
+        "avatar_url": avatar_url,
+        "media_url": settings.MEDIA_URL,
+        "media_root": str(settings.MEDIA_ROOT),
+        "serve_media_files": bool(getattr(settings, "SERVE_MEDIA_FILES", False)),
+        "expected_file_path": expected_file_path or None,
+        "file_exists": file_exists,
+    }
 
 
 def create_admin_log(action, performed_by=None, target_user=None, description=""):
@@ -286,6 +318,14 @@ class UserProfileView(APIView):
         )
 
 
+class ProfileAvatarDebugAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(_build_avatar_debug_payload(request.user, request), status=status.HTTP_200_OK)
+
+
 def _ensure_instructor(user):
     return _is_instructor_or_admin(user)
 
@@ -372,6 +412,15 @@ class InstructorProfileAvatarUploadAPIView(APIView):
         user.avatar = avatar
         user.save(update_fields=["avatar"])
         user.refresh_from_db(fields=["avatar"])
+        logger.info(
+            "Instructor avatar saved.",
+            extra={
+                "user_id": user.id,
+                "avatar_name": getattr(user.avatar, "name", ""),
+                "avatar_path": getattr(user.avatar, "path", ""),
+                "file_exists": Path(getattr(user.avatar, "path", "")).exists() if getattr(user.avatar, "path", "") else False,
+            },
+        )
         serializer = InstructorProfileSerializer(user, context={"request": request})
         avatar_payload = serializer.data
         return Response(
@@ -507,6 +556,15 @@ class StudentProfileAvatarUploadAPIView(APIView):
         user.avatar = avatar
         user.save(update_fields=["avatar"])
         user.refresh_from_db(fields=["avatar"])
+        logger.info(
+            "Student avatar saved.",
+            extra={
+                "user_id": user.id,
+                "avatar_name": getattr(user.avatar, "name", ""),
+                "avatar_path": getattr(user.avatar, "path", ""),
+                "file_exists": Path(getattr(user.avatar, "path", "")).exists() if getattr(user.avatar, "path", "") else False,
+            },
+        )
         serializer = StudentProfileSerializer(user, context={"request": request})
         avatar_payload = serializer.data
         return Response(

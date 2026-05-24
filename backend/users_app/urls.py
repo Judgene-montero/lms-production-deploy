@@ -5,6 +5,7 @@ from .views import (
     UploadApprovedIDsView,
     ApprovedIDListView,
     DeleteApprovedIDView,
+    ProfileAvatarDebugAPIView,
     UserProfileView,
     check_approved_id,
     register_user,
@@ -30,6 +31,7 @@ urlpatterns = [
     # User Profile
     path("me/", UserProfileView.as_view(), name="user-profile"),
     path("profile/", UserProfileView.as_view(), name="user-profile-update"),
+    path("profile/avatar-debug/", ProfileAvatarDebugAPIView.as_view(), name="profile-avatar-debug"),
 
     # Approved IDs (Admin)
     path("upload-ids/", UploadApprovedIDsView.as_view(), name="upload-ids"),
