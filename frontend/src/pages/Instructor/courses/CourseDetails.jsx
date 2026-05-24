@@ -2,8 +2,9 @@ import React, { Suspense, lazy, useCallback, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { LuBookOpen, LuUsers } from "react-icons/lu";
 import { authDelete, authGet, authPost, authPut } from "../../../utils/api";
-import { getDefaultAvatarDataUrl } from "../../../utils/instructorProfile";
 import { getWebSocketBaseUrl } from "../../../utils/runtimeConfig";
+import { getDefaultStudentAvatarDataUrl, resolveStudentAvatar } from "../../../utils/studentProfile";
+import SafeAvatarImage from "../../../components/common/SafeAvatarImage";
 
 const StreamTab = lazy(() => import("../../../components/course/StreamTab"));
 const LessonsTab = lazy(() => import("../../../components/course/LessonsTab"));
@@ -102,12 +103,10 @@ const mapStudentForDisplay = (student = {}) => {
     toNumber(student.recent_submissions_count ?? student.submissions_count ?? student.submissionsCount, 0)
   );
   const avatar =
-    student.avatar_url ||
-    student.avatar ||
-    student.profile_picture ||
+    resolveStudentAvatar(student) ||
     student.profile_image ||
     student.image_url ||
-    getDefaultAvatarDataUrl({ name: fullName });
+    getDefaultStudentAvatarDataUrl({ name: fullName });
 
   return {
     ...student,
@@ -156,8 +155,9 @@ function PeopleTab({ people, loading, error, isInstructor, onOpenProfile, onRemo
               onClick={() => onOpenProfile(student)}
               className="flex min-w-0 flex-1 items-start gap-3 text-left"
             >
-              <img
+              <SafeAvatarImage
                 src={student.avatar}
+                fallbackSrc={getDefaultStudentAvatarDataUrl({ name: student.fullName })}
                 alt={student.fullName}
                 className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-100"
               />

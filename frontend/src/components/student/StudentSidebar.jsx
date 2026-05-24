@@ -16,6 +16,7 @@ import {
   resolveStudentAvatar,
   subscribeStudentProfile,
 } from "../../utils/studentProfile";
+import SafeAvatarImage from "../common/SafeAvatarImage";
 
 export default function StudentSidebar({
   mobile = false,
@@ -69,6 +70,8 @@ export default function StudentSidebar({
 
   const displayName = profile?.name || profile?.full_name || profile?.username || "Student";
   const expanded = forceExpanded || (!mobile && isOpen);
+  const fallbackAvatar = getDefaultStudentAvatarDataUrl(profile || {});
+  const resolvedAvatar = resolveStudentAvatar(profile) || fallbackAvatar;
 
   const handleNavClick = () => {
     onNavigate?.();
@@ -86,8 +89,9 @@ export default function StudentSidebar({
           <div className="flex items-center justify-between gap-2">
             {expanded ? (
               <div className="flex items-center gap-3">
-                <img
-                  src={resolveStudentAvatar(profile) || getDefaultStudentAvatarDataUrl(profile || {})}
+                <SafeAvatarImage
+                  src={resolvedAvatar}
+                  fallbackSrc={fallbackAvatar}
                   alt="Student avatar"
                   className="h-10 w-10 rounded-full object-cover ring-2 ring-emerald-200"
                 />
@@ -97,8 +101,9 @@ export default function StudentSidebar({
                 </div>
               </div>
             ) : (
-              <img
-                src={resolveStudentAvatar(profile) || getDefaultStudentAvatarDataUrl(profile || {})}
+              <SafeAvatarImage
+                src={resolvedAvatar}
+                fallbackSrc={fallbackAvatar}
                 alt="Student avatar"
                 className="mx-auto h-8 w-8 rounded-full object-cover ring-2 ring-emerald-200"
               />

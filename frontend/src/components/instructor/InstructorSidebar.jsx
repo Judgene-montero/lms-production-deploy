@@ -10,6 +10,7 @@ import {
   LuPanelLeft,
 } from "react-icons/lu";
 import { getDefaultAvatarDataUrl, resolveInstructorAvatar } from "../../utils/instructorProfile";
+import SafeAvatarImage from "../common/SafeAvatarImage";
 
 const menuItems = [
   { name: "Dashboard", path: "/instructor-dashboard", icon: LuHouse },
@@ -36,6 +37,8 @@ const InstructorSidebar = ({
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(true);
   const expanded = forceExpanded || (!mobile && isOpen);
+  const fallbackAvatar = getDefaultAvatarDataUrl(profile);
+  const resolvedAvatar = resolveInstructorAvatar(profile) || fallbackAvatar;
 
   const handleLogout = () => {
     localStorage.removeItem("access_token");
@@ -60,8 +63,9 @@ const InstructorSidebar = ({
         <div className="mb-6 flex items-center justify-between rounded-xl bg-gradient-to-r from-emerald-50 to-lime-50 p-3">
           {expanded ? (
             <div className="flex items-center gap-3">
-              <img
-                src={resolveInstructorAvatar(profile) || getDefaultAvatarDataUrl(profile)}
+              <SafeAvatarImage
+                src={resolvedAvatar}
+                fallbackSrc={fallbackAvatar}
                 alt="Instructor avatar"
                 className="h-10 w-10 rounded-full object-cover ring-2 ring-emerald-200"
               />
@@ -71,8 +75,9 @@ const InstructorSidebar = ({
               </div>
             </div>
           ) : (
-            <img
-              src={resolveInstructorAvatar(profile) || getDefaultAvatarDataUrl(profile)}
+            <SafeAvatarImage
+              src={resolvedAvatar}
+              fallbackSrc={fallbackAvatar}
               alt="Instructor avatar"
               className="mx-auto h-8 w-8 rounded-full object-cover ring-2 ring-emerald-200"
             />

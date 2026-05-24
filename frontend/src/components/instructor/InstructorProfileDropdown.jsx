@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LuChevronDown, LuSettings, LuUser, LuLogOut } from "react-icons/lu";
 import { getDefaultAvatarDataUrl, resolveInstructorAvatar } from "../../utils/instructorProfile";
+import SafeAvatarImage from "../common/SafeAvatarImage";
 
 const InstructorProfileDropdown = ({ profile = {}, className = "" }) => {
   const navigate = useNavigate();
@@ -21,7 +22,8 @@ const InstructorProfileDropdown = ({ profile = {}, className = "" }) => {
 
   const displayName = profile?.full_name || profile?.username || "Instructor";
   const displayEmail = profile?.email || "instructor@example.com";
-  const avatar = resolveInstructorAvatar(profile);
+  const fallbackAvatar = getDefaultAvatarDataUrl(profile);
+  const avatar = resolveInstructorAvatar(profile) || fallbackAvatar;
 
   const handleLogout = () => {
     localStorage.removeItem("access_token");
@@ -37,7 +39,7 @@ const InstructorProfileDropdown = ({ profile = {}, className = "" }) => {
         onClick={() => setOpen((value) => !value)}
         className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-left shadow-sm transition hover:border-emerald-300 hover:shadow"
       >
-        <img src={avatar || getDefaultAvatarDataUrl(profile)} alt={displayName} className="h-10 w-10 rounded-full object-cover ring-2 ring-emerald-100" />
+        <SafeAvatarImage src={avatar} fallbackSrc={fallbackAvatar} alt={displayName} className="h-10 w-10 rounded-full object-cover ring-2 ring-emerald-100" />
 
         <div className="hidden sm:block">
           <p className="text-sm font-semibold text-emerald-900">{displayName}</p>

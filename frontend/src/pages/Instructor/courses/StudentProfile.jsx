@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { authGet } from "../../../utils/api";
-import { getDefaultAvatarDataUrl } from "../../../utils/instructorProfile";
+import SafeAvatarImage from "../../../components/common/SafeAvatarImage";
+import { getDefaultStudentAvatarDataUrl, resolveStudentAvatar } from "../../../utils/studentProfile";
 
 const safeNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -49,11 +50,9 @@ export default function StudentProfile({ courseId, studentId, fallbackStudent = 
     const fullName = pickString(base.name, base.full_name, base.username, fallbackStudent?.fullName, "Student");
     const email = pickString(base.email, fallbackStudent?.email);
     const avatar =
-      base.avatar ||
-      base.avatar_url ||
-      base.profile_picture ||
+      resolveStudentAvatar(base) ||
       fallbackStudent?.avatar ||
-      getDefaultAvatarDataUrl({ name: fullName });
+      getDefaultStudentAvatarDataUrl({ name: fullName });
 
     const assignmentsCompleted = Math.max(
       0,
@@ -118,8 +117,9 @@ export default function StudentProfile({ courseId, studentId, fallbackStudent = 
 
       <section className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-          <img
+          <SafeAvatarImage
             src={student.avatar}
+            fallbackSrc={getDefaultStudentAvatarDataUrl({ name: student.fullName })}
             alt={student.fullName}
             className="h-20 w-20 rounded-full object-cover ring-2 ring-emerald-100"
           />

@@ -1,5 +1,6 @@
 import React from "react";
-import { getDefaultStudentAvatarDataUrl } from "../../utils/studentProfile";
+import SafeAvatarImage from "../common/SafeAvatarImage";
+import { getDefaultStudentAvatarDataUrl, resolveStudentAvatar } from "../../utils/studentProfile";
 
 const formatWhen = (value) => {
   if (!value) return "No date";
@@ -9,7 +10,8 @@ const formatWhen = (value) => {
 };
 
 export default function StudentActivityFeed({ items = [], title = "Recent Instructor Activity", profile = null }) {
-  const avatarSrc = profile?.avatar || profile?.avatar_url || getDefaultStudentAvatarDataUrl(profile || {});
+  const fallbackAvatar = getDefaultStudentAvatarDataUrl(profile || {});
+  const avatarSrc = resolveStudentAvatar(profile || {}) || fallbackAvatar;
 
   return (
     <section className="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
@@ -21,7 +23,7 @@ export default function StudentActivityFeed({ items = [], title = "Recent Instru
           {items.map((item) => (
             <li key={item.id || `${item.title}-${item.created_at}`} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="flex items-start gap-3">
-                <img src={avatarSrc} alt="Student avatar" className="h-8 w-8 rounded-full object-cover ring-1 ring-emerald-100" />
+                <SafeAvatarImage src={avatarSrc} fallbackSrc={fallbackAvatar} alt="Student avatar" className="h-8 w-8 rounded-full object-cover ring-1 ring-emerald-100" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">{item.title || "Activity update"}</p>
                   <p className="mt-1 text-xs text-gray-500">{item.course_title || item.course || "Course update"}</p>

@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { LuBell } from "react-icons/lu";
 import DashboardLayouts from "../../layouts/DashboardLayouts";
 import StudentSidebar from "../../components/student/StudentSidebar";
+import SafeAvatarImage from "../../components/common/SafeAvatarImage";
 import {
   getDefaultStudentAvatarDataUrl,
   loadStudentProfile,
@@ -36,8 +37,9 @@ const SidebarSkeleton = () => (
 const ProfileHeader = ({ student }) => (
   <div className="flex items-center gap-4">
     <div>
-      <img
+      <SafeAvatarImage
         src={resolveStudentAvatar(student || {}) || getDefaultStudentAvatarDataUrl(student || {})}
+        fallbackSrc={getDefaultStudentAvatarDataUrl(student || {})}
         alt="Avatar"
         className="h-16 w-16 rounded-full border-2 border-emerald-500 object-cover"
       />

@@ -1,5 +1,5 @@
 import { authGet, getUserProfile } from "./api";
-import { getApiBaseUrl } from "./runtimeConfig";
+import { resolveMediaUrl } from "./mediaUrls";
 
 const PROFILE_STORAGE_KEY = "student_profile";
 const PROFILE_EVENT = "student-profile-updated";
@@ -24,12 +24,7 @@ export const getDefaultStudentAvatarDataUrl = (profile = {}) => {
 export const resolveStudentAvatar = (profile = {}) => {
   const avatar = profile?.avatar_url || profile?.avatar || profile?.profile_picture || null;
   if (!avatar) return null;
-  if (/^(data:|blob:|https?:\/\/)/i.test(String(avatar))) {
-    return avatar;
-  }
-  const base = getApiBaseUrl();
-  const normalizedPath = String(avatar).startsWith("/") ? String(avatar) : `/${String(avatar)}`;
-  return `${base}${normalizedPath}`;
+  return resolveMediaUrl(avatar);
 };
 
 export const readCachedStudentProfile = () => {

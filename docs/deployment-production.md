@@ -28,6 +28,7 @@ Set these in Render for the Django web service:
 - `DATABASE_URL=<Render PostgreSQL connection string>`
 - `CORS_ALLOWED_ORIGINS=https://your-frontend-project.vercel.app`
 - `CSRF_TRUSTED_ORIGINS=https://your-frontend-project.vercel.app`
+- `SERVE_MEDIA_FILES=True`
 
 Optional variables already supported:
 
@@ -92,3 +93,4 @@ After both services are live:
 6. Open the Django admin or a known authenticated endpoint to confirm database connectivity.
 7. Confirm static files load from the backend without 404 errors.
 8. If your workflow uses media uploads, upload a file and note that persistence is not guaranteed on free Render storage.
+9. Confirm uploaded avatar requests resolve to the Render backend origin, for example `https://your-backend-name.onrender.com/media/...`, not the Vercel frontend domain.

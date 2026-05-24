@@ -2,7 +2,8 @@
 import React, { Suspense, lazy, memo, useCallback, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { authGet, authPost } from "../../utils/api";
-import { getDefaultAvatarDataUrl } from "../../utils/instructorProfile";
+import SafeAvatarImage from "../../components/common/SafeAvatarImage";
+import { getDefaultStudentAvatarDataUrl, resolveStudentAvatar } from "../../utils/studentProfile";
 
 const StudentOverviewTab = lazy(() => import("../../components/students/StudentOverviewTab"));
 const StudentActivityTab = lazy(() => import("../../components/students/StudentActivityTab"));
@@ -826,8 +827,9 @@ function Students() {
               <button type="button" onClick={() => setDrawerStudent(null)} className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">Close</button>
             </div>
             <div className="mt-4 flex items-start gap-3">
-              <img
-                src={drawerDetails?.student?.avatar || getDefaultAvatarDataUrl({ name: drawerStudent.name })}
+              <SafeAvatarImage
+                src={resolveStudentAvatar(drawerDetails?.student || {}) || drawerDetails?.student?.avatar}
+                fallbackSrc={getDefaultStudentAvatarDataUrl({ name: drawerStudent.name })}
                 alt={drawerStudent.name}
                 className="h-14 w-14 rounded-full object-cover ring-2 ring-emerald-100"
               />
