@@ -321,7 +321,7 @@ class ActivitySubmissionSerializer(serializers.ModelSerializer):
         model = ActivitySubmission
         fields = [
             'id', 'activity', 'student', 'student_username',
-            'text_answer', 'attachments', 'link',
+            'text_answer', 'attachments', 'link', 'status',
             'submitted_at', 'grade', 'feedback', 'is_late'
         ]
         read_only_fields = ['id', 'student_username', 'attachments', 'submitted_at', 'is_late']
@@ -457,6 +457,10 @@ class CourseActivitySerializer(serializers.ModelSerializer):
     needs_manual_review = serializers.SerializerMethodField()
     pending_review_count = serializers.SerializerMethodField()
     submission_deadline = serializers.SerializerMethodField()
+    allow_late_submission = serializers.SerializerMethodField()
+    is_overdue = serializers.SerializerMethodField()
+    can_submit = serializers.SerializerMethodField()
+    submission_locked_reason = serializers.SerializerMethodField()
 
     # Join code fields
     join_code = serializers.CharField(read_only=True)
@@ -476,6 +480,7 @@ class CourseActivitySerializer(serializers.ModelSerializer):
             'created_at',
             'due_date',
             'allow_late_submissions',
+            'allow_late_submission',
             'points',
             'file',               # instructor file
             'link',
@@ -510,6 +515,9 @@ class CourseActivitySerializer(serializers.ModelSerializer):
             "needs_manual_review",
             "pending_review_count",
             "submission_deadline",
+            "is_overdue",
+            "can_submit",
+            "submission_locked_reason",
             "questions",
             "sections",
             "course_ids",
@@ -903,7 +911,19 @@ class CourseActivitySerializer(serializers.ModelSerializer):
         return obj.quiz_attempts.filter(status=QuizAttempt.STATUS_PENDING_REVIEW).count()
 
     def get_submission_deadline(self, obj):
-        return obj.due_date or obj.availability_end
+        return obj.get_submission_deadline() or obj.availability_end
+
+    def get_allow_late_submission(self, obj):
+        return bool(obj.allow_late_submissions)
+
+    def get_is_overdue(self, obj):
+        return obj.is_submission_overdue()
+
+    def get_can_submit(self, obj):
+        return obj.can_accept_submission()
+
+    def get_submission_locked_reason(self, obj):
+        return obj.get_submission_locked_reason()
 
     # Get the student's own submission
     def get_submission(self, obj):

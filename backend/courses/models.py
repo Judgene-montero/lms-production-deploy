@@ -237,6 +237,28 @@ class CourseActivity(models.Model):
 
         super().save(*args, **kwargs)
 
+    @property
+    def allow_late_submission(self):
+        return bool(self.allow_late_submissions)
+
+    def get_submission_deadline(self):
+        return self.due_date
+
+    def is_submission_overdue(self, now=None):
+        deadline = self.get_submission_deadline()
+        if not deadline:
+            return False
+        now = now or timezone.now()
+        return bool(now > deadline)
+
+    def can_accept_submission(self, now=None):
+        return bool(self.allow_late_submissions or not self.is_submission_overdue(now=now))
+
+    def get_submission_locked_reason(self, now=None):
+        if self.can_accept_submission(now=now):
+            return ""
+        return "Submission closed. Due date has passed."
+
     def __str__(self):
         return f"{self.course.title} - {self.title}"
 

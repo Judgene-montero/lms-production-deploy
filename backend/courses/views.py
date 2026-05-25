@@ -3891,12 +3891,20 @@ def submit_task(request, course_id, activity_id):
 
     data = request.data.copy()
     files = request.FILES.getlist("files")
-    is_late_now = bool(activity.due_date and timezone.now() > activity.due_date)
+    now = timezone.now()
+    is_late_now = activity.is_submission_overdue(now=now)
 
-    if is_late_now and not bool(activity.allow_late_submissions):
+    if not activity.can_accept_submission(now=now):
         return Response(
-            {"error": "Late submissions are disabled for this classwork."},
-            status=400,
+            {
+                "error": activity.get_submission_locked_reason(now=now),
+                "allow_late_submission": bool(activity.allow_late_submissions),
+                "allow_late_submissions": bool(activity.allow_late_submissions),
+                "is_overdue": True,
+                "can_submit": False,
+                "submission_locked_reason": activity.get_submission_locked_reason(now=now),
+            },
+            status=403,
         )
 
     if _is_quiz_activity(activity):
@@ -4013,6 +4021,21 @@ def upload_attachment(request, submission_id):
         )
     except ActivitySubmission.DoesNotExist:
         return Response({"error": "Submission not found"}, status=404)
+
+    activity = submission.activity
+    now = timezone.now()
+    if not activity.can_accept_submission(now=now):
+        return Response(
+            {
+                "error": activity.get_submission_locked_reason(now=now),
+                "allow_late_submission": bool(activity.allow_late_submissions),
+                "allow_late_submissions": bool(activity.allow_late_submissions),
+                "is_overdue": True,
+                "can_submit": False,
+                "submission_locked_reason": activity.get_submission_locked_reason(now=now),
+            },
+            status=403,
+        )
 
     file = request.FILES.get("file")
     if not file:
@@ -6691,6 +6714,46 @@ class ActivitySubmissionViewSet(viewsets.ModelViewSet):
             # Instructor sees submissions only for their courses
             return ActivitySubmission.objects.filter(activity__course__instructor=user)
         return ActivitySubmission.objects.filter(student=user)
+
+    def _enforce_student_due_date(self, submission_or_activity):
+        user = self.request.user
+        if getattr(user, "role", "") != "student":
+            return None
+        activity = submission_or_activity.activity if hasattr(submission_or_activity, "activity") else submission_or_activity
+        if activity.can_accept_submission():
+            return None
+        payload = {
+            "error": activity.get_submission_locked_reason(),
+            "allow_late_submission": bool(activity.allow_late_submissions),
+            "allow_late_submissions": bool(activity.allow_late_submissions),
+            "is_overdue": True,
+            "can_submit": False,
+            "submission_locked_reason": activity.get_submission_locked_reason(),
+        }
+        return Response(payload, status=403)
+
+    def create(self, request, *args, **kwargs):
+        activity_id = request.data.get("activity")
+        activity = CourseActivity.objects.filter(id=activity_id).first() if activity_id else None
+        if activity:
+            blocked = self._enforce_student_due_date(activity)
+            if blocked:
+                return blocked
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        blocked = self._enforce_student_due_date(instance)
+        if blocked:
+            return blocked
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        blocked = self._enforce_student_due_date(instance)
+        if blocked:
+            return blocked
+        return super().partial_update(request, *args, **kwargs)
     
 
 @api_view(["GET", "POST"])

@@ -58,33 +58,56 @@ export const getActivityStatus = (activity) => {
   const submission = getSubmissionForActivity(activity);
   const submittedAt = getActivitySubmittedAt(activity);
   const dueDate = activity?.due_date ? new Date(activity.due_date) : null;
+  const isOverdue = Boolean(activity?.is_overdue);
+  const canSubmit = activity?.can_submit !== false;
+  const lockedReason = String(activity?.submission_locked_reason || "").trim();
+
+  if (submission?.status === "returned") {
+    return { label: "Returned", tone: "orange", key: "completed" };
+  }
 
   if (submission || submittedAt) {
     if (submission?.grade !== null && submission?.grade !== undefined) {
-      return { label: "Completed", tone: "green", key: "completed" };
+      return { label: "Graded", tone: "green", key: "completed" };
+    }
+
+    if (submission?.feedback && !submission?.grade) {
+      return { label: "Returned", tone: "orange", key: "completed" };
+    }
+
+    if (submission?.is_late) {
+      return { label: "Late Submission", tone: "amber", key: "completed" };
     }
 
     if (!dueDate || Number.isNaN(dueDate.getTime())) {
-      return { label: "Completed", tone: "green", key: "completed" };
+      return { label: "Submitted", tone: "green", key: "completed" };
     }
 
     const submittedDate = new Date(submittedAt);
     if (!Number.isNaN(submittedDate.getTime()) && submittedDate > dueDate) {
-      return { label: "Completed Late", tone: "amber", key: "completed" };
+      return { label: "Late Submission", tone: "amber", key: "completed" };
     }
 
-    return { label: "Completed", tone: "green", key: "completed" };
+    return { label: "Submitted", tone: "green", key: "completed" };
   }
 
   if (!dueDate || Number.isNaN(dueDate.getTime())) {
-    return { label: "Pending", tone: "slate", key: "pending" };
+    return { label: "Not Started", tone: "slate", key: "pending" };
+  }
+
+  if (isOverdue && !canSubmit) {
+    return { label: lockedReason || "Past Due", tone: "red", key: "past_due" };
+  }
+
+  if (isOverdue) {
+    return { label: "Past Due", tone: "amber", key: "pending" };
   }
 
   if (dueDate.getTime() < Date.now()) {
-    return { label: "Missing", tone: "red", key: "missing" };
+    return { label: "Past Due", tone: "red", key: "past_due" };
   }
 
-  return { label: "Pending", tone: "slate", key: "pending" };
+  return { label: "Not Started", tone: "slate", key: "pending" };
 };
 
 export const buildPerformanceSummary = (activities = []) => {
@@ -112,7 +135,7 @@ export const buildPerformanceSummary = (activities = []) => {
   });
 
   const completed = rows.filter((row) => row.status.key === "completed").length;
-  const missing = rows.filter((row) => row.status.key === "missing").length;
+  const missing = rows.filter((row) => row.status.key === "missing" || row.status.key === "past_due").length;
   const pending = rows.filter((row) => row.status.key === "pending").length;
   const gradedRows = rows.filter((row) => row.score !== null && Number(row.maxScore) > 0);
   const totalScored = gradedRows.reduce((sum, row) => sum + Number(row.score || 0), 0);
@@ -210,4 +233,3 @@ export const buildEarlyWarnings = ({ activities = [], lessons = [] }) => {
 
   return warnings;
 };
-

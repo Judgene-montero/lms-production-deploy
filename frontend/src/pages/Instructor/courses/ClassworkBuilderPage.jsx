@@ -293,13 +293,18 @@ export default function ClassworkBuilderPage({ typeKey = "assignment", mode = "c
             )}
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={Boolean(formData.allow_late_submissions)}
-              onChange={(event) => onFieldChange("allow_late_submissions", event.target.checked)}
-            />
-            Allow late submissions
+          <label className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-sm text-gray-700">
+            <span className="flex items-center gap-2 font-medium text-emerald-900">
+              <input
+                type="checkbox"
+                checked={Boolean(formData.allow_late_submissions)}
+                onChange={(event) => onFieldChange("allow_late_submissions", event.target.checked)}
+              />
+              Allow late submissions
+            </span>
+            <span className="mt-1 block text-xs text-emerald-800">
+              Late submissions allowed after due date.
+            </span>
           </label>
 
           {typeKey === "project" && (

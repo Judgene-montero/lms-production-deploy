@@ -405,7 +405,7 @@ export default function StudentCourseDetails() {
 
     const counts = performanceSummary.rows.reduce((acc, row) => {
       if (row.status.key === "completed") acc.completed += 1;
-      else if (row.status.key === "missing") acc.missing += 1;
+      else if (row.status.key === "missing" || row.status.key === "past_due") acc.missing += 1;
       else acc.pending += 1;
       return acc;
     }, { completed: 0, pending: 0, missing: 0 });
@@ -516,7 +516,7 @@ export default function StudentCourseDetails() {
         case "pending":
           return status.key === "pending";
         case "missing":
-          return status.key === "missing";
+          return status.key === "missing" || status.key === "past_due";
         case "completed":
           return status.key === "completed";
         case "graded":
@@ -567,7 +567,7 @@ export default function StudentCourseDetails() {
       await refreshActivitiesAndSelection(activityId);
     } catch (requestError) {
       console.error(requestError);
-      alert("Submission failed.");
+      alert(requestError?.message || "Submission failed.");
     }
   }, [courseId, refreshActivitiesAndSelection]);
 
