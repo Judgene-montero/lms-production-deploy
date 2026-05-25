@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Navigate, Route, Routes } from "react-router-d
 
 import Register from "./pages/Register";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 import StudentDashboard from "./pages/Student/Dashboard";
 import StudentHome from "./pages/Student/StudentHome";
@@ -147,6 +149,8 @@ const App = () => {
 
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
 
         <Route
           path="/courses/:courseId/meetings"

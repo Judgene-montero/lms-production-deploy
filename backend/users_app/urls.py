@@ -1,6 +1,11 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views_auth import MyTokenObtainPairView
+from .views_password import (
+    PasswordResetConfirmAPIView,
+    PasswordResetRequestAPIView,
+    PasswordResetVerifyAPIView,
+)
 from .views import (
     UploadApprovedIDsView,
     ApprovedIDListView,
@@ -42,6 +47,9 @@ urlpatterns = [
     path("check-approved-id/<str:school_id>/", check_approved_id),
     path("register/", register_user, name="register-user"),
     path("verify-email/<str:token>/", verify_email, name="verify-email"),
+    path("password-reset/request/", PasswordResetRequestAPIView.as_view(), name="password-reset-request"),
+    path("password-reset/verify/<str:uid>/<str:token>/", PasswordResetVerifyAPIView.as_view(), name="password-reset-verify"),
+    path("password-reset/confirm/", PasswordResetConfirmAPIView.as_view(), name="password-reset-confirm"),
 
     # Admin instructor approval
     path("admin/instructor-pending/", PendingInstructorApprovalsView.as_view(), name="pending-instructors-legacy"),

@@ -88,10 +88,28 @@ export const authGet = async (endpoint) => {
   }
 };
 
+export const publicGet = async (endpoint) => {
+  try {
+    const res = await axiosInstance.get(endpoint, { skipAuth: true });
+    return res.data;
+  } catch (error) {
+    throw buildRequestError("GET", endpoint, error);
+  }
+};
+
 /* ------------------------------ AUTH POST ------------------------------ */
 export const authPost = async (endpoint, data) => {
   try {
     const res = await axiosInstance.post(endpoint, data);
+    return res.data;
+  } catch (error) {
+    throw buildRequestError("POST", endpoint, error);
+  }
+};
+
+export const publicPost = async (endpoint, data) => {
+  try {
+    const res = await axiosInstance.post(endpoint, data, { skipAuth: true });
     return res.data;
   } catch (error) {
     throw buildRequestError("POST", endpoint, error);

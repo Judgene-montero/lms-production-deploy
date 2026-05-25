@@ -315,8 +315,19 @@ else:
     }
 
 
-EMAIL_BACKEND = os.getenv("DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-DEFAULT_FROM_EMAIL = os.getenv("DJANGO_DEFAULT_FROM_EMAIL", "no-reply@enhancelms.local")
+EMAIL_HOST = _get_env("EMAIL_HOST", "DJANGO_EMAIL_HOST", default="")
+EMAIL_PORT = int(_get_env("EMAIL_PORT", "DJANGO_EMAIL_PORT", default="587") or 587)
+EMAIL_HOST_USER = _get_env("EMAIL_HOST_USER", "DJANGO_EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = _get_env("EMAIL_HOST_PASSWORD", "DJANGO_EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = _get_bool_env("EMAIL_USE_TLS", "DJANGO_EMAIL_USE_TLS", default=True)
+DEFAULT_FROM_EMAIL = _get_env("DEFAULT_FROM_EMAIL", "DJANGO_DEFAULT_FROM_EMAIL", default="no-reply@enhancelms.local")
+FRONTEND_URL = _get_env("FRONTEND_URL", "DJANGO_FRONTEND_URL", default="http://localhost:3000")
+PASSWORD_RESET_TIMEOUT = int(_get_env("PASSWORD_RESET_TIMEOUT", "DJANGO_PASSWORD_RESET_TIMEOUT", default="259200") or 259200)
+
+if EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
+    EMAIL_BACKEND = _get_env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+else:
+    EMAIL_BACKEND = _get_env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "memory://")

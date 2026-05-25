@@ -190,6 +190,16 @@ const Login = () => {
           />
         </label>
 
+        <div className="mb-5 text-right">
+          <button
+            type="button"
+            onClick={() => navigate("/forgot-password")}
+            className="text-sm font-medium text-emerald-200 transition hover:text-emerald-100"
+          >
+            Forgot Password?
+          </button>
+        </div>
+
         <button
           type="submit"
           disabled={loading}
