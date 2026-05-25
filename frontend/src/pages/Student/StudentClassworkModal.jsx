@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import StudentQuizPlayer from "../../components/student/StudentQuizPlayer";
 import QuizAttemptView from "../../components/student/QuizAttemptView";
 import QuizResults from "../../components/student/QuizResults";
+import { getApiBaseUrl } from "../../utils/runtimeConfig";
 
 const attendanceStatusClasses = {
   present: "bg-green-100 text-green-700",
@@ -25,6 +26,15 @@ const extractFileName = (value, fallback = "Attachment") => {
   } catch {
     return fallback;
   }
+};
+
+const resolveAssetUrl = (value) => {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(String(value))) return value;
+  const baseUrl = getApiBaseUrl();
+  const normalizedBase = String(baseUrl || "").replace(/\/+$/, "");
+  const normalizedPath = String(value).startsWith("/") ? String(value) : `/${value}`;
+  return `${normalizedBase}${normalizedPath}`;
 };
 
 const formatDateTime = (value, fallback = "No date") => {
@@ -164,7 +174,7 @@ function SubmissionPane({
                   {submission.attachments.map((file, index) => (
                     <a
                       key={file.id || file.file || index}
-                      href={file.file}
+                      href={resolveAssetUrl(file.file)}
                       target="_blank"
                       rel="noreferrer"
                       className="block break-words rounded-2xl border border-slate-200 px-3 py-3 text-sm font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50"
@@ -701,7 +711,7 @@ export default function StudentClassworkModal({
                         Resources
                       </p>
                       <a
-                        href={mainFileUrl}
+                        href={resolveAssetUrl(mainFileUrl)}
                         target="_blank"
                         rel="noreferrer"
                         className="block break-all rounded-2xl border border-slate-200 px-3 py-3 text-sm font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50"
@@ -720,7 +730,7 @@ export default function StudentClassworkModal({
                         {extraAttachments.map((file, index) => (
                           <a
                             key={file.id || index}
-                            href={file.file}
+                            href={resolveAssetUrl(file.file)}
                             target="_blank"
                             rel="noreferrer"
                             className="block break-words rounded-2xl border border-slate-200 px-3 py-3 text-sm font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50"

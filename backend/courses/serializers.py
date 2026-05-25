@@ -287,10 +287,11 @@ class ModuleSerializer(serializers.ModelSerializer):
 
 class SubmissionAttachmentSerializer(serializers.ModelSerializer):
     file = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
 
     class Meta:
         model = SubmissionAttachment
-        fields = ['id', 'file', 'uploaded_at']
+        fields = ['id', 'file', 'name', 'uploaded_at']
 
     def get_file(self, obj):
         if not obj.file:
@@ -307,6 +308,14 @@ class SubmissionAttachmentSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url)
 
         return url
+
+    def get_name(self, obj):
+        if not obj.file:
+            return ""
+        try:
+            return obj.file.name.split("/")[-1]
+        except Exception:
+            return ""
 
 
 class ActivitySubmissionSerializer(serializers.ModelSerializer):

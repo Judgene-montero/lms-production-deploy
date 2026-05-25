@@ -870,16 +870,62 @@ def activities_list(request, course_id):
     return Response(serializer.data)
 
 
+def _extract_upload_list(request, preferred_keys=("files", "attachments", "uploaded_files")):
+    uploads = []
+    for key in preferred_keys:
+        uploads.extend(request.FILES.getlist(key))
+
+    unique_uploads = []
+    seen = set()
+    for upload in uploads:
+        signature = (
+            getattr(upload, "name", ""),
+            int(getattr(upload, "size", 0) or 0),
+            getattr(upload, "content_type", ""),
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        unique_uploads.append(upload)
+    return unique_uploads
+
+
+def _sync_activity_attachments(activity, uploads, replace_existing=False):
+    if replace_existing:
+        activity.attachments.all().delete()
+
+    for upload in uploads:
+        SubmissionAttachment.objects.create(
+            submission=None,
+            announcement=activity,
+            file=upload,
+        )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def add_activity(request, course_id):
+    course = Course.objects.filter(id=course_id).first()
+    if not course or not _can_manage_course(request.user, course):
+        return Response({"error": "Course not found or access denied"}, status=404)
+
     data = request.data.copy()
     data["course"] = course_id
     serializer = CourseActivitySerializer(data=data, context={"request": request})
     if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=201)
+        try:
+            activity = serializer.save()
+            extra_uploads = _extract_upload_list(request)
+            if extra_uploads:
+                _sync_activity_attachments(activity, extra_uploads, replace_existing=True)
+            return Response(CourseActivitySerializer(activity, context={"request": request}).data, status=201)
+        except Exception:
+            logger.exception(
+                "Failed to save activity attachments.",
+                extra={"course_id": course_id, "user_id": getattr(request.user, "id", None)},
+            )
+            return Response({"error": "Failed to save activity attachments."}, status=400)
     else:
         logger.warning(
             "Activity serializer validation failed.",
@@ -1129,8 +1175,18 @@ def activity_detail(request, course_id, activity_id):
     elif request.method in ["PUT", "PATCH"]:
         serializer = CourseActivitySerializer(activity, data=request.data, partial=True, context={"request": request})
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
+            try:
+                updated_activity = serializer.save()
+                extra_uploads = _extract_upload_list(request)
+                if extra_uploads:
+                    _sync_activity_attachments(updated_activity, extra_uploads, replace_existing=True)
+                return Response(CourseActivitySerializer(updated_activity, context={"request": request}).data)
+            except Exception:
+                logger.exception(
+                    "Failed to update activity attachments.",
+                    extra={"course_id": course_id, "activity_id": activity_id, "user_id": getattr(request.user, "id", None)},
+                )
+                return Response({"error": "Failed to update activity attachments."}, status=400)
         return Response(serializer.errors, status=400)
 
     elif request.method == "DELETE":
@@ -3890,7 +3946,7 @@ def submit_task(request, course_id, activity_id):
     )
 
     data = request.data.copy()
-    files = request.FILES.getlist("files")
+    files = _extract_upload_list(request)
     now = timezone.now()
     is_late_now = activity.is_submission_overdue(now=now)
 
@@ -3939,28 +3995,34 @@ def submit_task(request, course_id, activity_id):
         )
 
         if serializer.is_valid():
-            submission = serializer.save()
-            if submission.status != "submitted":
-                submission.status = "submitted"
-                submission.save(update_fields=["status"])
-            if is_late_now and not submission.is_late:
-                submission.is_late = True
-                submission.save(update_fields=["is_late"])
+            try:
+                submission = serializer.save()
+                if submission.status != "submitted":
+                    submission.status = "submitted"
+                    submission.save(update_fields=["status"])
+                if is_late_now and not submission.is_late:
+                    submission.is_late = True
+                    submission.save(update_fields=["is_late"])
 
-            # replace files
-            if files:
-                submission.attachments.all().delete()
-                for f in files:
-                    SubmissionAttachment.objects.create(
-                        submission=submission,
-                        file=f
-                    )
+                if files:
+                    submission.attachments.all().delete()
+                    for f in files:
+                        SubmissionAttachment.objects.create(
+                            submission=submission,
+                            file=f
+                        )
 
-            dispatch_event("assignment_submitted", submission=submission, actor=request.user)
+                dispatch_event("assignment_submitted", submission=submission, actor=request.user)
 
-            return Response(
-                ActivitySubmissionSerializer(submission, context={"request": request}).data
-            )
+                return Response(
+                    ActivitySubmissionSerializer(submission, context={"request": request}).data
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to update student submission.",
+                    extra={"course_id": course_id, "activity_id": activity_id, "user_id": getattr(request.user, "id", None)},
+                )
+                return Response({"error": "Failed to upload or save submission files."}, status=400)
 
         return Response(serializer.errors, status=400)
 
@@ -3974,23 +4036,30 @@ def submit_task(request, course_id, activity_id):
     serializer = ActivitySubmissionSerializer(data=data, context={"request": request})
 
     if serializer.is_valid():
-        submission = serializer.save()
-        if submission.status != "submitted":
-            submission.status = "submitted"
-            submission.save(update_fields=["status"])
-        if is_late_now and not submission.is_late:
-            submission.is_late = True
-            submission.save(update_fields=["is_late"])
+        try:
+            submission = serializer.save()
+            if submission.status != "submitted":
+                submission.status = "submitted"
+                submission.save(update_fields=["status"])
+            if is_late_now and not submission.is_late:
+                submission.is_late = True
+                submission.save(update_fields=["is_late"])
 
-        for f in files:
-            SubmissionAttachment.objects.create(submission=submission, file=f)
+            for f in files:
+                SubmissionAttachment.objects.create(submission=submission, file=f)
 
-        dispatch_event("assignment_submitted", submission=submission, actor=request.user)
+            dispatch_event("assignment_submitted", submission=submission, actor=request.user)
 
-        return Response(
-            ActivitySubmissionSerializer(submission, context={"request": request}).data,
-            status=201
-        )
+            return Response(
+                ActivitySubmissionSerializer(submission, context={"request": request}).data,
+                status=201
+            )
+        except Exception:
+            logger.exception(
+                "Failed to create student submission.",
+                extra={"course_id": course_id, "activity_id": activity_id, "user_id": getattr(request.user, "id", None)},
+            )
+            return Response({"error": "Failed to upload or save submission files."}, status=400)
 
     return Response(serializer.errors, status=400)    
 
@@ -4013,7 +4082,6 @@ def unsubmit_task(request, submission_id):
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def upload_attachment(request, submission_id):
-
     try:
         submission = ActivitySubmission.objects.get(
             id=submission_id,
@@ -4037,16 +4105,37 @@ def upload_attachment(request, submission_id):
             status=403,
         )
 
-    file = request.FILES.get("file")
-    if not file:
+    uploads = _extract_upload_list(request, preferred_keys=("file", "files", "attachments", "uploaded_files"))
+    if not uploads:
         return Response({"error": "No file provided"}, status=400)
 
-    attachment = SubmissionAttachment.objects.create(
-        submission=submission,
-        file=file
-    )
+    try:
+        created = []
+        for upload in uploads:
+            created.append(
+                SubmissionAttachment.objects.create(
+                    submission=submission,
+                    file=upload,
+                )
+            )
+    except Exception:
+        logger.exception(
+            "Failed to upload submission attachment.",
+            extra={
+                "submission_id": submission_id,
+                "activity_id": getattr(submission.activity, "id", None),
+                "user_id": getattr(request.user, "id", None),
+            },
+        )
+        return Response({"error": "Failed to upload submission attachment."}, status=400)
 
-    return Response({"message": "File uploaded"}, status=201)
+    return Response(
+        {
+            "message": "File uploaded",
+            "attachments": SubmissionAttachmentSerializer(created, many=True, context={"request": request}).data,
+        },
+        status=201,
+    )
 
 
 @api_view(["GET"])
