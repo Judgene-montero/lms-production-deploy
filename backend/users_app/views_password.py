@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -30,6 +31,35 @@ def _build_reset_url(request, user):
     return f"{base_url}/reset-password/{uid}/{token}", uid, token
 
 
+def _send_reset_email_async(*, user_id, email, subject, message, reset_url, uid, token):
+    def runner():
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+            logger.info(
+                "Password reset email dispatched.",
+                extra={"user_id": user_id, "email": email},
+            )
+        except Exception:
+            logger.exception(
+                "Password reset email delivery failed.",
+                extra={"user_id": user_id, "email": email},
+            )
+        finally:
+            if "console" in str(settings.EMAIL_BACKEND).lower():
+                logger.info(
+                    "Password reset link generated for development.",
+                    extra={"user_id": user_id, "email": email, "reset_url": reset_url, "uid": uid, "token": token},
+                )
+
+    threading.Thread(target=runner, name=f"password-reset-email-{user_id}", daemon=True).start()
+
+
 class PasswordResetRequestAPIView(APIView):
     permission_classes = [AllowAny]
 
@@ -48,20 +78,15 @@ class PasswordResetRequestAPIView(APIView):
                 f"Use this link to reset your password:\n{reset_url}\n\n"
                 "If you did not request this, you can ignore this email."
             )
-
-            send_mail(
+            _send_reset_email_async(
+                user_id=user.id,
+                email=user.email,
                 subject=subject,
                 message=message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
+                reset_url=reset_url,
+                uid=uid,
+                token=token,
             )
-
-            if "console" in str(settings.EMAIL_BACKEND).lower():
-                logger.info(
-                    "Password reset link generated for development.",
-                    extra={"user_id": user.id, "email": user.email, "reset_url": reset_url, "uid": uid, "token": token},
-                )
 
         return Response(GENERIC_RESET_RESPONSE, status=status.HTTP_200_OK)
 
