@@ -197,3 +197,32 @@ The LMS helps:
 - administrators manage the platform
 
 Use this guide as a quick daily reference.
+
+## 8. Deployment Email Notes
+
+Forgot-password email delivery is designed to work with a production email provider and should not rely on Gmail SMTP from Render.
+
+Recommended production setup for Render with Brevo / Sendinblue SMTP:
+
+- `EMAIL_PROVIDER=brevo`
+- `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`
+- `EMAIL_HOST=smtp-relay.brevo.com`
+- `EMAIL_PORT=587`
+- `EMAIL_USE_TLS=True`
+- `EMAIL_HOST_USER=<brevo_login>`
+- `EMAIL_HOST_PASSWORD=<brevo_smtp_key>`
+- `DEFAULT_FROM_EMAIL=STCFI LMS <stcfilms.noreply@gmail.com>`
+- `FRONTEND_URL=https://lms-production-deploy.vercel.app`
+- `EMAIL_TIMEOUT=15`
+
+Local development can continue using the console email backend:
+
+- `EMAIL_PROVIDER=console`
+- `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`
+
+Behavior notes:
+
+- forgot-password requests always return a generic success response
+- password reset tokens remain server-generated and secure
+- email/provider secrets stay on the backend only
+- email delivery failures are logged safely without exposing user data to the frontend

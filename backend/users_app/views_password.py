@@ -33,6 +33,7 @@ def _build_reset_url(request, user):
 
 def _send_reset_email_async(*, user_id, email, subject, message, reset_url, uid, token):
     def runner():
+        provider = str(getattr(settings, "EMAIL_PROVIDER", "unknown") or "unknown")
         try:
             send_mail(
                 subject=subject,
@@ -43,18 +44,25 @@ def _send_reset_email_async(*, user_id, email, subject, message, reset_url, uid,
             )
             logger.info(
                 "Password reset email dispatched.",
-                extra={"user_id": user_id, "email": email},
+                extra={"user_id": user_id, "email": email, "email_provider": provider},
             )
         except Exception:
             logger.exception(
                 "Password reset email delivery failed.",
-                extra={"user_id": user_id, "email": email},
+                extra={"user_id": user_id, "email": email, "email_provider": provider},
             )
         finally:
             if "console" in str(settings.EMAIL_BACKEND).lower():
                 logger.info(
                     "Password reset link generated for development.",
-                    extra={"user_id": user_id, "email": email, "reset_url": reset_url, "uid": uid, "token": token},
+                    extra={
+                        "user_id": user_id,
+                        "email": email,
+                        "email_provider": provider,
+                        "reset_url": reset_url,
+                        "uid": uid,
+                        "token": token,
+                    },
                 )
 
     threading.Thread(target=runner, name=f"password-reset-email-{user_id}", daemon=True).start()

@@ -315,7 +315,9 @@ else:
     }
 
 
-EMAIL_HOST = _get_env("EMAIL_HOST", "DJANGO_EMAIL_HOST", default="")
+EMAIL_PROVIDER = str(_get_env("EMAIL_PROVIDER", "DJANGO_EMAIL_PROVIDER", default="console") or "console").strip().lower()
+_EMAIL_HOST_DEFAULT = "smtp-relay.brevo.com" if EMAIL_PROVIDER in {"brevo", "sendinblue"} else ""
+EMAIL_HOST = _get_env("EMAIL_HOST", "DJANGO_EMAIL_HOST", default=_EMAIL_HOST_DEFAULT)
 EMAIL_PORT = int(_get_env("EMAIL_PORT", "DJANGO_EMAIL_PORT", default="587") or 587)
 EMAIL_HOST_USER = _get_env("EMAIL_HOST_USER", "DJANGO_EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = _get_env("EMAIL_HOST_PASSWORD", "DJANGO_EMAIL_HOST_PASSWORD", default="")
@@ -326,9 +328,17 @@ FRONTEND_URL = _get_env("FRONTEND_URL", "DJANGO_FRONTEND_URL", default="http://l
 PASSWORD_RESET_TIMEOUT = int(_get_env("PASSWORD_RESET_TIMEOUT", "DJANGO_PASSWORD_RESET_TIMEOUT", default="259200") or 259200)
 
 if EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
-    EMAIL_BACKEND = _get_env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+    EMAIL_BACKEND = _get_env(
+        "EMAIL_BACKEND",
+        "DJANGO_EMAIL_BACKEND",
+        default="django.core.mail.backends.smtp.EmailBackend",
+    )
 else:
-    EMAIL_BACKEND = _get_env("DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
+    EMAIL_BACKEND = _get_env(
+        "EMAIL_BACKEND",
+        "DJANGO_EMAIL_BACKEND",
+        default="django.core.mail.backends.console.EmailBackend",
+    )
 
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "memory://")
