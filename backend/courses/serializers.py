@@ -3,6 +3,7 @@ from rest_framework import serializers
 import json
 import math
 import mimetypes
+import os
 import re
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
@@ -34,6 +35,60 @@ from .models import (
 )
 from .services.grading import ACTIVITY_CATEGORY_LABELS, evaluate_custom_formula, validate_custom_transmutation_table
 from users_app.models import Category, Course
+
+
+def _safe_file_name(file_field, fallback="Attached file"):
+    if not file_field:
+        return fallback
+    file_name = str(getattr(file_field, "name", "") or "").strip()
+    if not file_name:
+        return fallback
+    base_name = os.path.basename(file_name)
+    return base_name or fallback
+
+
+def _safe_file_url(file_field, request=None):
+    if not file_field:
+        return None
+    file_name = str(getattr(file_field, "name", "") or "").strip()
+    if not file_name:
+        return None
+    try:
+        url = file_field.url
+    except Exception:
+        return None
+    if not url:
+        return None
+    if request:
+        try:
+            return request.build_absolute_uri(url)
+        except Exception:
+            return url
+    return url
+
+
+def _safe_file_size(file_field):
+    if not file_field:
+        return None
+    file_name = str(getattr(file_field, "name", "") or "").strip()
+    if not file_name:
+        return None
+    try:
+        size = getattr(file_field, "size", None)
+    except Exception:
+        return None
+    if size in (None, ""):
+        return None
+    try:
+        return int(size)
+    except Exception:
+        return None
+
+
+def _safe_mime_type(file_field, fallback_name="Attached file"):
+    file_name = _safe_file_name(file_field, fallback=fallback_name)
+    guessed_type, _ = mimetypes.guess_type(file_name)
+    return guessed_type or None
 
 # -----------------------------
 # Course Serializer
@@ -298,45 +353,19 @@ class SubmissionAttachmentSerializer(serializers.ModelSerializer):
         fields = ['id', 'file', 'file_url', 'name', 'file_size', 'mime_type', 'uploaded_at']
 
     def get_file(self, obj):
-        if not obj.file:
-            return None
-
-        request = self.context.get("request")
-
-        try:
-            url = obj.file.url
-        except (AttributeError, ValueError):
-            return None
-
-        if request:
-            return request.build_absolute_uri(url)
-
-        return url
+        return _safe_file_url(getattr(obj, "file", None), request=self.context.get("request"))
 
     def get_name(self, obj):
-        if not obj.file:
-            return ""
-        try:
-            return obj.file.name.split("/")[-1]
-        except Exception:
-            return ""
+        return _safe_file_name(getattr(obj, "file", None))
 
     def get_file_url(self, obj):
         return self.get_file(obj)
 
     def get_file_size(self, obj):
-        if not obj.file:
-            return None
-        try:
-            return int(obj.file.size)
-        except Exception:
-            return None
+        return _safe_file_size(getattr(obj, "file", None))
 
     def get_mime_type(self, obj):
-        file_name = self.get_name(obj)
-        if not file_name:
-            return ""
-        return mimetypes.guess_type(file_name)[0] or ""
+        return _safe_mime_type(getattr(obj, "file", None))
 
 
 class ActivitySubmissionSerializer(serializers.ModelSerializer):
@@ -882,40 +911,43 @@ class CourseActivitySerializer(serializers.ModelSerializer):
         serialized in the same format as SubmissionAttachmentSerializer.
         """
         attachments = []
+        request = self.context.get("request")
 
         # Include the main instructor file if it exists
-        if obj.file:
-            try:
-                file_name = obj.file.name.split("/")[-1]
-                url = self._absolute_url(obj.file.url)
-                attachments.append({
-                    "id": obj.id,  # can use activity id if no separate attachment model
-                    "file": url,
-                    "file_url": url,
-                    "name": file_name,
-                    "file_size": int(obj.file.size) if getattr(obj.file, "size", None) is not None else None,
-                    "mime_type": mimetypes.guess_type(file_name)[0] or "",
-                })
-            except (ValueError, AttributeError):
-                pass
+        main_file = getattr(obj, "file", None)
+        main_file_name = _safe_file_name(main_file)
+        main_file_url = _safe_file_url(main_file, request=request)
+        main_file_size = _safe_file_size(main_file)
+        main_file_mime_type = _safe_mime_type(main_file)
+        if main_file_url or str(getattr(main_file, "name", "") or "").strip():
+            attachments.append(
+                {
+                    "id": obj.id,
+                    "file": main_file_url,
+                    "file_url": main_file_url,
+                    "name": main_file_name,
+                    "file_size": main_file_size,
+                    "mime_type": main_file_mime_type,
+                    "uploaded_at": getattr(obj, "created_at", None),
+                }
+            )
 
         # Include extra activity attachments saved in SubmissionAttachment(announcement=...)
         for attachment in obj.attachments.all():
-            if not attachment.file:
-                continue
-            try:
-                file_name = attachment.file.name.split("/")[-1]
-                url = self._absolute_url(attachment.file.url)
-                attachments.append({
-                    "id": attachment.id,
-                    "file": url,
-                    "file_url": url,
+            file_field = getattr(attachment, "file", None)
+            file_name = _safe_file_name(file_field)
+            file_url = _safe_file_url(file_field, request=request)
+            attachments.append(
+                {
+                    "id": getattr(attachment, "id", None),
+                    "file": file_url,
+                    "file_url": file_url,
                     "name": file_name,
-                    "file_size": int(attachment.file.size) if getattr(attachment.file, "size", None) is not None else None,
-                    "mime_type": mimetypes.guess_type(file_name)[0] or "",
-                })
-            except (ValueError, AttributeError):
-                continue
+                    "file_size": _safe_file_size(file_field),
+                    "mime_type": _safe_mime_type(file_field),
+                    "uploaded_at": getattr(attachment, "uploaded_at", None),
+                }
+            )
 
         return attachments
 
