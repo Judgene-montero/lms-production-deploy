@@ -1,10 +1,10 @@
 # core/urls.py
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 
-# ADD THESE IMPORTS (they are missing)
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.static import serve as media_serve
 from courses import views as course_views
 from users_app.views import (
     ChangePasswordAPIView,
@@ -63,5 +63,11 @@ urlpatterns = [
 ]
 
 # Keep uploaded media reachable when Django is serving requests directly.
-if settings.DEBUG or getattr(settings, "SERVE_MEDIA_FILES", False):
+# This is a temporary Render/local-disk media solution. Long term, move user
+# uploads to object storage instead of serving them from the app container.
+if getattr(settings, "SERVE_MEDIA_FILES", False):
+    urlpatterns += [
+        re_path(r"^media/(?P<path>.*)$", media_serve, {"document_root": settings.MEDIA_ROOT}),
+    ]
+elif settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

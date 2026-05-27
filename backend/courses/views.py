@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.utils import timezone
 from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 import json
 import random
 import secrets
@@ -902,6 +903,41 @@ def _sync_activity_attachments(activity, uploads, replace_existing=False):
         )
 
 
+def _log_saved_media_state(file_field, label, **extra):
+    if not file_field:
+        logger.info("%s skipped: no file attached.", label, extra=extra)
+        return
+
+    file_name = getattr(file_field, "name", "") or ""
+    try:
+        file_url = file_field.url
+    except (AttributeError, ValueError):
+        file_url = ""
+    try:
+        file_path = file_field.path
+    except (AttributeError, NotImplementedError, ValueError):
+        file_path = ""
+
+    exists = False
+    if file_name:
+        try:
+            exists = default_storage.exists(file_name)
+        except Exception:
+            logger.warning("%s storage existence check failed.", label, exc_info=True, extra=extra)
+
+    logger.info(
+        "%s saved.",
+        label,
+        extra={
+            **extra,
+            "saved_file_name": file_name,
+            "saved_file_url": file_url,
+            "saved_file_path": file_path,
+            "storage_exists": exists,
+        },
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
@@ -916,9 +952,25 @@ def add_activity(request, course_id):
     if serializer.is_valid():
         try:
             activity = serializer.save()
+            _log_saved_media_state(
+                activity.file,
+                "Activity primary file",
+                course_id=course_id,
+                activity_id=activity.id,
+                user_id=getattr(request.user, "id", None),
+            )
             extra_uploads = _extract_upload_list(request)
             if extra_uploads:
                 _sync_activity_attachments(activity, extra_uploads, replace_existing=True)
+                for attachment in activity.attachments.all():
+                    _log_saved_media_state(
+                        attachment.file,
+                        "Activity attachment file",
+                        course_id=course_id,
+                        activity_id=activity.id,
+                        attachment_id=attachment.id,
+                        user_id=getattr(request.user, "id", None),
+                    )
             return Response(CourseActivitySerializer(activity, context={"request": request}).data, status=201)
         except Exception:
             logger.exception(
@@ -1177,9 +1229,25 @@ def activity_detail(request, course_id, activity_id):
         if serializer.is_valid():
             try:
                 updated_activity = serializer.save()
+                _log_saved_media_state(
+                    updated_activity.file,
+                    "Activity primary file",
+                    course_id=course_id,
+                    activity_id=updated_activity.id,
+                    user_id=getattr(request.user, "id", None),
+                )
                 extra_uploads = _extract_upload_list(request)
                 if extra_uploads:
                     _sync_activity_attachments(updated_activity, extra_uploads, replace_existing=True)
+                    for attachment in updated_activity.attachments.all():
+                        _log_saved_media_state(
+                            attachment.file,
+                            "Activity attachment file",
+                            course_id=course_id,
+                            activity_id=updated_activity.id,
+                            attachment_id=attachment.id,
+                            user_id=getattr(request.user, "id", None),
+                        )
                 return Response(CourseActivitySerializer(updated_activity, context={"request": request}).data)
             except Exception:
                 logger.exception(
@@ -4007,9 +4075,18 @@ def submit_task(request, course_id, activity_id):
                 if files:
                     submission.attachments.all().delete()
                     for f in files:
-                        SubmissionAttachment.objects.create(
+                        attachment = SubmissionAttachment.objects.create(
                             submission=submission,
                             file=f
+                        )
+                        _log_saved_media_state(
+                            attachment.file,
+                            "Submission attachment file",
+                            course_id=course_id,
+                            activity_id=activity_id,
+                            submission_id=submission.id,
+                            attachment_id=attachment.id,
+                            user_id=getattr(request.user, "id", None),
                         )
 
                 dispatch_event("assignment_submitted", submission=submission, actor=request.user)
@@ -4046,7 +4123,16 @@ def submit_task(request, course_id, activity_id):
                 submission.save(update_fields=["is_late"])
 
             for f in files:
-                SubmissionAttachment.objects.create(submission=submission, file=f)
+                attachment = SubmissionAttachment.objects.create(submission=submission, file=f)
+                _log_saved_media_state(
+                    attachment.file,
+                    "Submission attachment file",
+                    course_id=course_id,
+                    activity_id=activity_id,
+                    submission_id=submission.id,
+                    attachment_id=attachment.id,
+                    user_id=getattr(request.user, "id", None),
+                )
 
             dispatch_event("assignment_submitted", submission=submission, actor=request.user)
 
@@ -4112,12 +4198,19 @@ def upload_attachment(request, submission_id):
     try:
         created = []
         for upload in uploads:
-            created.append(
-                SubmissionAttachment.objects.create(
-                    submission=submission,
-                    file=upload,
-                )
+            attachment = SubmissionAttachment.objects.create(
+                submission=submission,
+                file=upload,
             )
+            _log_saved_media_state(
+                attachment.file,
+                "Submission attachment file",
+                submission_id=submission_id,
+                activity_id=getattr(submission.activity, "id", None),
+                attachment_id=attachment.id,
+                user_id=getattr(request.user, "id", None),
+            )
+            created.append(attachment)
     except Exception:
         logger.exception(
             "Failed to upload submission attachment.",

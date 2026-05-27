@@ -205,7 +205,11 @@ else:
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-SERVE_MEDIA_FILES = _get_bool_env("SERVE_MEDIA_FILES", default=True)
+# Temporary production-safe toggle for platforms like Render when user uploads
+# are still stored on the local filesystem. Long term, move uploaded media to
+# object storage such as S3 or Cloudinary instead of serving from app disk.
+SERVE_MEDIA_FILES = _get_bool_env("SERVE_MEDIA_FILES", default=False)
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
 CLOUDINARY_CLOUD_NAME = _get_env("CLOUDINARY_CLOUD_NAME")
 CLOUDINARY_API_KEY = _get_env("CLOUDINARY_API_KEY")
