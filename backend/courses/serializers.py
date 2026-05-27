@@ -2,6 +2,7 @@
 from rest_framework import serializers
 import json
 import math
+import mimetypes
 import re
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
@@ -287,11 +288,14 @@ class ModuleSerializer(serializers.ModelSerializer):
 
 class SubmissionAttachmentSerializer(serializers.ModelSerializer):
     file = serializers.SerializerMethodField()
+    file_url = serializers.SerializerMethodField()
     name = serializers.SerializerMethodField()
+    file_size = serializers.SerializerMethodField()
+    mime_type = serializers.SerializerMethodField()
 
     class Meta:
         model = SubmissionAttachment
-        fields = ['id', 'file', 'name', 'uploaded_at']
+        fields = ['id', 'file', 'file_url', 'name', 'file_size', 'mime_type', 'uploaded_at']
 
     def get_file(self, obj):
         if not obj.file:
@@ -316,6 +320,23 @@ class SubmissionAttachmentSerializer(serializers.ModelSerializer):
             return obj.file.name.split("/")[-1]
         except Exception:
             return ""
+
+    def get_file_url(self, obj):
+        return self.get_file(obj)
+
+    def get_file_size(self, obj):
+        if not obj.file:
+            return None
+        try:
+            return int(obj.file.size)
+        except Exception:
+            return None
+
+    def get_mime_type(self, obj):
+        file_name = self.get_name(obj)
+        if not file_name:
+            return ""
+        return mimetypes.guess_type(file_name)[0] or ""
 
 
 class ActivitySubmissionSerializer(serializers.ModelSerializer):
@@ -865,11 +886,15 @@ class CourseActivitySerializer(serializers.ModelSerializer):
         # Include the main instructor file if it exists
         if obj.file:
             try:
+                file_name = obj.file.name.split("/")[-1]
                 url = self._absolute_url(obj.file.url)
                 attachments.append({
                     "id": obj.id,  # can use activity id if no separate attachment model
                     "file": url,
-                    "name": obj.file.name.split("/")[-1]
+                    "file_url": url,
+                    "name": file_name,
+                    "file_size": int(obj.file.size) if getattr(obj.file, "size", None) is not None else None,
+                    "mime_type": mimetypes.guess_type(file_name)[0] or "",
                 })
             except (ValueError, AttributeError):
                 pass
@@ -879,11 +904,15 @@ class CourseActivitySerializer(serializers.ModelSerializer):
             if not attachment.file:
                 continue
             try:
+                file_name = attachment.file.name.split("/")[-1]
                 url = self._absolute_url(attachment.file.url)
                 attachments.append({
                     "id": attachment.id,
                     "file": url,
-                    "name": attachment.file.name.split("/")[-1]
+                    "file_url": url,
+                    "name": file_name,
+                    "file_size": int(attachment.file.size) if getattr(attachment.file, "size", None) is not None else None,
+                    "mime_type": mimetypes.guess_type(file_name)[0] or "",
                 })
             except (ValueError, AttributeError):
                 continue
