@@ -63,15 +63,18 @@ const DashboardLayouts = ({ sidebar, right }) => {
         )}
 
         <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+          {right ? (
+            <div className="border-b border-emerald-100 bg-white/90 p-3 shadow-sm backdrop-blur-md lg:hidden">
+              {right}
+            </div>
+          ) : null}
+
           <main className="min-w-0 flex-1 overflow-x-hidden bg-gradient-to-b from-white to-emerald-50/40 p-3 transition-all duration-300 sm:p-4 md:p-6">
             <Outlet />
           </main>
 
           {right ? (
             <>
-              <div className="border-t border-emerald-100 bg-white/90 p-3 shadow-sm backdrop-blur-md lg:hidden">
-                {right}
-              </div>
               <div className="hidden w-72 shrink-0 border-l border-emerald-100 bg-white/90 p-4 shadow-sm backdrop-blur-md lg:flex lg:flex-col">
                 {right}
               </div>

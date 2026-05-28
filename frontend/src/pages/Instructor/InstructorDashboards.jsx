@@ -33,14 +33,32 @@ const InstructorDashboard = () => {
 
   const rightSidebar = (
     <div className="space-y-4 lg:sticky lg:top-6">
-      <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50 to-lime-50 p-4 shadow-sm">
+      <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm lg:hidden">
+        <h4 className="mb-3 text-sm font-semibold text-emerald-900">Instructor Shortcuts</h4>
+        <ul className="space-y-2 text-sm text-gray-700">
+          <li className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+            <LuPanelTop className="h-4 w-4 text-emerald-700" />
+            Review dashboard KPIs
+          </li>
+          <li className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+            <LuSparkles className="h-4 w-4 text-emerald-700" />
+            Open AI analytics insights
+          </li>
+          <li className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+            <LuCalendarClock className="h-4 w-4 text-emerald-700" />
+            Check today&apos;s activity
+          </li>
+        </ul>
+      </div>
+
+      <div className="hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50 to-lime-50 p-4 shadow-sm lg:block">
         <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Account</p>
         <div className="mt-3">
           <InstructorProfileDropdown profile={profile || {}} className="w-full" />
         </div>
       </div>
 
-      <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+      <div className="hidden rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm lg:block">
         <h4 className="mb-3 text-sm font-semibold text-emerald-900">Instructor Shortcuts</h4>
         <ul className="space-y-2 text-sm text-gray-700">
           <li className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2">
