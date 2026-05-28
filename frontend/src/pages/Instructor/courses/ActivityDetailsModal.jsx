@@ -1,16 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   LuBadgeCheck,
   LuBookOpen,
   LuCalendarClock,
   LuClipboardList,
-  LuExternalLink,
-  LuFileText,
-  LuFolderOpen,
   LuPencil,
   LuTrash2,
   LuUsers,
 } from "react-icons/lu";
+import { getApiBaseUrl } from "../../../utils/runtimeConfig";
 
 // Read-only details modal for existing classwork items.
 
@@ -62,6 +60,452 @@ const parseStructuredTextAnswer = (value) => {
   }
 };
 
+const actionButtonClass =
+  "inline-flex items-center justify-center rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-900 transition hover:border-emerald-300 hover:bg-emerald-50";
+const solidActionButtonClass =
+  "inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700";
+const imageExtensions = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
+const pdfExtensions = new Set(["pdf"]);
+const officeExtensions = new Set(["doc", "docx", "ppt", "pptx", "xls", "xlsx"]);
+const urlPattern = /\bhttps?:\/\/[^\s<>()]+/gi;
+const unsafeTrailingCharacters = /[),.;!?]+$/;
+
+const extractFileName = (value, fallback = "Attachment") => {
+  if (!value) return fallback;
+  try {
+    return decodeURIComponent(String(value).split("/").pop().split("?")[0]) || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const resolveAssetUrl = (value) => {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(String(value))) return value;
+  const baseUrl = getApiBaseUrl();
+  const normalizedBase = String(baseUrl || "").replace(/\/+$/, "");
+  const normalizedPath = String(value).startsWith("/") ? String(value) : `/${value}`;
+  return `${normalizedBase}${normalizedPath}`;
+};
+
+const formatFileSize = (value) => {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) return "Size unavailable";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size >= 10 * 1024 ? 0 : 1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(size >= 10 * 1024 * 1024 ? 1 : 2)} MB`;
+};
+
+const getFileExtension = (value = "") => {
+  const source = String(value || "").split("?")[0];
+  const lastDot = source.lastIndexOf(".");
+  if (lastDot === -1) return "";
+  return source.slice(lastDot + 1).trim().toLowerCase();
+};
+
+const humanizeFileType = (attachment) => {
+  const mimeType = String(attachment?.mimeType || attachment?.mime_type || "").trim();
+  if (mimeType) {
+    return mimeType
+      .replace("application/vnd.openxmlformats-officedocument.", "office ")
+      .replace("application/vnd.ms-", "ms-")
+      .replace("application/", "")
+      .replace("image/", "")
+      .replace(/[-_.]+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  const extension = getFileExtension(attachment?.name || attachment?.url || "");
+  return extension ? extension.toUpperCase() : "File";
+};
+
+const isSafeExternalUrl = (value) => /^https?:\/\//i.test(String(value || "").trim());
+
+const cleanExtractedUrl = (value) => String(value || "").trim().replace(unsafeTrailingCharacters, "");
+
+const extractLinksFromText = (text) => {
+  const matches = String(text || "").match(urlPattern) || [];
+  const seen = new Set();
+  return matches
+    .map(cleanExtractedUrl)
+    .filter((item) => isSafeExternalUrl(item) && !seen.has(item) && seen.add(item));
+};
+
+const getYouTubeVideoId = (value) => {
+  try {
+    const url = new URL(value);
+    if (url.hostname.includes("youtu.be")) return url.pathname.replace(/^\/+/, "").split("/")[0] || "";
+    if (url.pathname.includes("/embed/")) return url.pathname.split("/embed/")[1]?.split(/[?/]/)[0] || "";
+    return url.searchParams.get("v") || "";
+  } catch {
+    return "";
+  }
+};
+
+const getLinkProvider = (value) => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+    if (host.includes("drive.google.com")) return "drive";
+    if (host.includes("docs.google.com")) return "docs";
+    if (host.includes("tinkercad.com")) return "tinkercad";
+    return "website";
+  } catch {
+    return "website";
+  }
+};
+
+const buildLinkMeta = (value) => {
+  if (!isSafeExternalUrl(value)) return null;
+  const url = cleanExtractedUrl(value);
+  const provider = getLinkProvider(url);
+  let hostname = "Link";
+  try {
+    hostname = new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    hostname = "Link";
+  }
+  const youtubeId = provider === "youtube" ? getYouTubeVideoId(url) : "";
+  const providerMap = {
+    youtube: { label: "YouTube", badge: "YT", title: "YouTube Video" },
+    drive: { label: "Google Drive", badge: "DRIVE", title: "Google Drive Resource" },
+    docs: { label: "Google Docs", badge: "DOCS", title: "Google Docs Resource" },
+    tinkercad: { label: "Tinkercad", badge: "3D", title: "Tinkercad Resource" },
+    website: { label: "Website", badge: "WEB", title: hostname },
+  };
+  const config = providerMap[provider] || providerMap.website;
+  return {
+    id: `link-${url}`,
+    url,
+    provider,
+    hostname,
+    label: config.label,
+    badge: config.badge,
+    title: config.title,
+    previewUrl: youtubeId ? `https://www.youtube.com/embed/${youtubeId}` : "",
+  };
+};
+
+const buildAttachmentMeta = (value, fallbackName = "Attachment", sourceLabel = "Attachment") => {
+  if (!value) return null;
+  const rawUrl = resolveAssetUrl(value.file_url || value.file || value.url || "");
+  const name = value.name || extractFileName(rawUrl, fallbackName);
+  const extension = getFileExtension(name || rawUrl);
+  const mimeType = String(value.mime_type || value.mimeType || "").trim();
+  return {
+    id: value.id || rawUrl || name,
+    name,
+    url: rawUrl,
+    downloadUrl: rawUrl,
+    size: value.file_size ?? value.size ?? null,
+    mimeType,
+    extension,
+    isImage: imageExtensions.has(extension) || mimeType.startsWith("image/"),
+    isPdf: pdfExtensions.has(extension) || mimeType.includes("pdf"),
+    isOffice: officeExtensions.has(extension),
+    sourceLabel,
+  };
+};
+
+const getOfficeViewerUrl = (value) => {
+  if (!isSafeExternalUrl(value)) return "";
+  return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(value)}`;
+};
+
+const renderInlineLinkedText = (text) => {
+  const lines = String(text || "").split("\n");
+  return lines.map((line, lineIndex) => {
+    const parts = line.split(urlPattern);
+    const matches = line.match(urlPattern) || [];
+    return (
+      <React.Fragment key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) => {
+          const url = matches[partIndex] ? cleanExtractedUrl(matches[partIndex]) : null;
+          return (
+            <React.Fragment key={`part-${lineIndex}-${partIndex}`}>
+              {part}
+              {url ? (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-4 transition hover:text-emerald-800"
+                >
+                  {url}
+                </a>
+              ) : null}
+            </React.Fragment>
+          );
+        })}
+        {lineIndex < lines.length - 1 ? <br /> : null}
+      </React.Fragment>
+    );
+  });
+};
+
+const copyText = async (value) => {
+  if (!value) return false;
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  const succeeded = document.execCommand("copy");
+  document.body.removeChild(textArea);
+  return succeeded;
+};
+
+function PreviewModal({ item, onClose, onCopy, copiedKey }) {
+  if (!item) return null;
+  const isFile = item.kind === "file";
+  const openUrl = item.openUrl || item.url || item.downloadUrl || "";
+  const downloadUrl = item.downloadUrl || item.url || "";
+  const officePreviewUrl = item.isOffice ? getOfficeViewerUrl(item.url) : "";
+  const canPreviewImage = item.isImage && item.url;
+  const canPreviewPdf = item.isPdf && item.url;
+  const canPreviewOffice = item.isOffice && officePreviewUrl;
+  const canPreviewYoutube = item.provider === "youtube" && item.previewUrl;
+  const previewUnavailableMessage = isFile
+    ? "Preview is not available for this file. Please download it instead."
+    : "Preview is not available for this link. Please open it in a new tab.";
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-slate-950/70 p-3 sm:p-6" onClick={onClose} role="presentation">
+      <div
+        className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-[0_26px_70px_rgba(15,23,42,0.45)]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.95),rgba(255,255,255,1))] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">
+              {isFile ? humanizeFileType(item) : item.label}
+            </p>
+            <h4 className="mt-1 truncate text-lg font-semibold text-slate-900 sm:text-xl" title={item.name || item.title}>
+              {item.name || item.title}
+            </h4>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {openUrl ? (
+              <button type="button" onClick={() => onCopy(openUrl)} className={actionButtonClass}>
+                {copiedKey === openUrl ? "Copied" : "Copy Link"}
+              </button>
+            ) : null}
+            {openUrl ? (
+              <a href={openUrl} target="_blank" rel="noopener noreferrer" className={actionButtonClass}>
+                Open in New Tab
+              </a>
+            ) : null}
+            {downloadUrl ? (
+              <a href={downloadUrl} download className={solidActionButtonClass}>
+                Download
+              </a>
+            ) : null}
+            <button type="button" onClick={onClose} className={actionButtonClass}>
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3 sm:p-5">
+          {canPreviewImage ? (
+            <div className="flex h-full items-center justify-center rounded-[24px] border border-slate-200 bg-white p-3">
+              <img src={item.url} alt={item.name} className="max-h-[72vh] w-auto max-w-full rounded-2xl object-contain" />
+            </div>
+          ) : null}
+          {canPreviewPdf ? (
+            <div className="h-[72vh] overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+              <iframe title={item.name} src={item.url} className="h-full w-full" />
+            </div>
+          ) : null}
+          {!canPreviewImage && !canPreviewPdf && canPreviewOffice ? (
+            <div className="h-[72vh] overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+              <iframe title={item.name} src={officePreviewUrl} className="h-full w-full" />
+            </div>
+          ) : null}
+          {!canPreviewImage && !canPreviewPdf && !canPreviewOffice && canPreviewYoutube ? (
+            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white p-3">
+              <div className="aspect-video overflow-hidden rounded-2xl bg-slate-950">
+                <iframe
+                  title={item.title}
+                  src={item.previewUrl}
+                  className="h-full w-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+          ) : null}
+          {!canPreviewImage && !canPreviewPdf && !canPreviewOffice && !canPreviewYoutube ? (
+            <div className="flex h-full min-h-[280px] items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-white p-6 text-center">
+              <div>
+                <p className="text-base font-semibold text-slate-800">Preview unavailable</p>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">{previewUnavailableMessage}</p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttachmentCard({ attachment, onPreview, onCopy }) {
+  if (!attachment) return null;
+  const badgeText = attachment.isImage
+    ? "IMG"
+    : attachment.isPdf
+    ? "PDF"
+    : attachment.isOffice
+    ? (attachment.extension || "OFFICE").toUpperCase()
+    : (attachment.extension || "FILE").toUpperCase();
+  const previewLabel = attachment.isImage || attachment.isPdf || attachment.isOffice ? "Preview" : "Open";
+  const previewAvailable = Boolean(attachment.url && (attachment.isImage || attachment.isPdf || attachment.isOffice));
+
+  return (
+    <article className="overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-sm">
+      <div className="flex min-w-0 flex-col gap-4 p-4 sm:flex-row sm:items-start">
+        <div className="flex h-20 w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-emerald-100 bg-[linear-gradient(135deg,rgba(236,253,245,0.9),rgba(248,250,252,1))] sm:h-24 sm:w-28">
+          {attachment.isImage && attachment.url ? (
+            <img src={attachment.url} alt={attachment.name} className="h-full w-full object-cover" />
+          ) : (
+            <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+              {badgeText}
+            </span>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-900" title={attachment.name}>
+                {attachment.name}
+              </p>
+              <p className="mt-1 break-words text-xs text-slate-500">
+                {humanizeFileType(attachment)}{attachment.size ? ` | ${formatFileSize(attachment.size)}` : ""}
+              </p>
+            </div>
+            <span className="w-fit shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+              {attachment.sourceLabel}
+            </span>
+          </div>
+
+          <div className="mt-4 flex min-w-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => (previewAvailable ? onPreview(attachment) : window.open(attachment.url, "_blank", "noopener,noreferrer"))}
+              className={solidActionButtonClass}
+              disabled={!attachment.url}
+            >
+              {previewLabel}
+            </button>
+            {attachment.url ? (
+              <a href={attachment.url} target="_blank" rel="noopener noreferrer" className={actionButtonClass}>
+                Open
+              </a>
+            ) : null}
+            {attachment.downloadUrl ? (
+              <a href={attachment.downloadUrl} download className={actionButtonClass}>
+                Download
+              </a>
+            ) : null}
+            {attachment.url ? (
+              <button type="button" onClick={() => onCopy(attachment.url)} className={actionButtonClass}>
+                Copy Link
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function AttachmentSection({ title, items, onPreview, onCopy, emptyText = "No files available." }) {
+  return (
+    <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-500">{title}</h3>
+      {items.length > 0 ? (
+        <div className="mt-4 space-y-3">
+          {items.map((item) => (
+            <AttachmentCard key={item.id || item.url || item.name} attachment={item} onPreview={onPreview} onCopy={onCopy} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-dashed border-emerald-100 bg-emerald-50/40 px-4 py-4 text-sm text-gray-500">
+          {emptyText}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LinkCard({ item, onPreview, onCopy, copiedKey }) {
+  if (!item) return null;
+  return (
+    <article className="overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-sm">
+      {item.provider === "youtube" && item.previewUrl ? (
+        <div className="aspect-video overflow-hidden border-b border-emerald-100 bg-slate-950">
+          <iframe
+            title={item.title}
+            src={item.previewUrl}
+            className="h-full w-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      ) : null}
+      <div className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+              {item.badge}
+            </span>
+            <p className="mt-3 truncate text-sm font-semibold text-slate-900" title={item.title}>
+              {item.title}
+            </p>
+            <p className="mt-1 truncate text-xs text-slate-500">{item.hostname}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {item.provider === "youtube" ? (
+            <button type="button" onClick={() => onPreview(item)} className={solidActionButtonClass}>
+              Preview
+            </button>
+          ) : null}
+          <a href={item.url} target="_blank" rel="noopener noreferrer" className={actionButtonClass}>
+            Open
+          </a>
+          <button type="button" onClick={() => onCopy(item.url)} className={actionButtonClass}>
+            {copiedKey === item.url ? "Copied" : "Copy Link"}
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function LinkSection({ title, items, onPreview, onCopy, copiedKey }) {
+  if (!items.length) return null;
+  return (
+    <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-500">{title}</h3>
+      <div className="mt-4 space-y-3">
+        {items.map((item) => (
+          <LinkCard key={item.id} item={item} onPreview={onPreview} onCopy={onCopy} copiedKey={copiedKey} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function ActivityDetailsModal({
   activity,
   onClose,
@@ -77,6 +521,8 @@ export default function ActivityDetailsModal({
   const [feedbackInput, setFeedbackInput] = useState("");
   const [savingGrade, setSavingGrade] = useState(false);
   const [gradeError, setGradeError] = useState("");
+  const [previewItem, setPreviewItem] = useState(null);
+  const [copiedKey, setCopiedKey] = useState("");
 
   const isPageMode = mode === "page";
 
@@ -90,17 +536,33 @@ export default function ActivityDetailsModal({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isPageMode, onClose]);
 
-  if (!activity) return null;
-  const mappedComponent = mapActivityToComponent(activity.activity_type_name || activity.activity_type);
-  const submissionSummary = getSubmissionSummary(activity.submissions);
+  const mappedComponent = mapActivityToComponent(activity?.activity_type_name || activity?.activity_type);
+  const submissionSummary = getSubmissionSummary(activity?.submissions);
 
-  const mainFileUrl = activity.file || activity.attachments?.[0]?.file || null;
-  const mainFileName = mainFileUrl
-    ? decodeURIComponent(mainFileUrl.split("/").pop().split("?")[0])
-    : "";
-  const extraAttachments = (activity.attachments || []).filter(
-    (item) => item?.file && item.file !== mainFileUrl
-  );
+  const instructorAttachments = useMemo(() => {
+    const rawItems = Array.isArray(activity?.attachments) && activity.attachments.length > 0
+      ? activity.attachments
+      : activity?.file
+      ? [{ id: activity.id || "activity-file", file: activity.file, file_url: activity.file, name: extractFileName(activity.file, "Instructor file") }]
+      : [];
+    const seen = new Set();
+    return rawItems
+      .map((item, index) => buildAttachmentMeta(item, `Attachment ${index + 1}`, index === 0 ? "Main instructor file" : "Resource file"))
+      .filter((item) => item?.url && !seen.has(item.url) && seen.add(item.url));
+  }, [activity]);
+  const mainInstructorAttachment = instructorAttachments[0] || null;
+  const extraAttachments = instructorAttachments.slice(1);
+  const overviewLinks = useMemo(() => {
+    const textLinks = extractLinksFromText(activity?.description || "");
+    const fieldLinks = [activity?.link].filter(Boolean).map(cleanExtractedUrl);
+    const seen = new Set();
+    return [...textLinks, ...fieldLinks]
+      .filter((item) => isSafeExternalUrl(item) && !seen.has(item) && seen.add(item))
+      .map(buildLinkMeta)
+      .filter(Boolean);
+  }, [activity]);
+  if (!activity) return null;
+
   const summaryCards = [
       {
         label: "Activity Type",
@@ -168,7 +630,21 @@ export default function ActivityDetailsModal({
     }
   };
 
+  const handleCopy = async (value) => {
+    try {
+      const didCopy = await copyText(value);
+      if (!didCopy) return;
+      setCopiedKey(value);
+      window.setTimeout(() => {
+        setCopiedKey((current) => (current === value ? "" : current));
+      }, 1800);
+    } catch {
+      // Keep failures quiet for normal users.
+    }
+  };
+
   return (
+    <>
     <div
       className={
         isPageMode
@@ -324,7 +800,7 @@ export default function ActivityDetailsModal({
                     </h3>
                   </div>
                   <p className="mt-4 whitespace-pre-line text-sm leading-7 text-gray-800 sm:text-base">
-                    {activity.description || "No additional instructions were provided for this activity."}
+                    {renderInlineLinkedText(activity.description || "No additional instructions were provided for this activity.")}
                   </p>
                 </section>
 
@@ -379,54 +855,31 @@ export default function ActivityDetailsModal({
                   </div>
                 </section>
 
-              {mainFileUrl && (
-                <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
-                      <LuFileText className="h-4 w-4" />
-                    </span>
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-500">
-                      Main Instructor File
-                    </h3>
-                  </div>
-                  <a
-                    href={mainFileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 px-4 py-3 text-sm font-medium text-emerald-800 transition-all duration-200 hover:bg-emerald-100/70"
-                  >
-                    <span className="break-all">{mainFileName}</span>
-                    <LuExternalLink className="h-4 w-4 shrink-0" />
-                  </a>
-                </section>
-              )}
+              {mainInstructorAttachment ? (
+                <AttachmentSection
+                  title="Main Instructor File"
+                  items={[mainInstructorAttachment]}
+                  onPreview={(item) => setPreviewItem({ ...item, kind: "file", openUrl: item.url })}
+                  onCopy={handleCopy}
+                />
+              ) : null}
 
-              {extraAttachments.length > 0 && (
-                <section className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
-                      <LuFolderOpen className="h-4 w-4" />
-                    </span>
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-500">
-                      Attachments
-                    </h3>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {extraAttachments.map((file, i) => (
-                      <a
-                        key={file.id || i}
-                        href={file.file}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 px-4 py-3 text-sm font-medium text-gray-700 transition-all duration-200 hover:bg-emerald-50"
-                      >
-                        <span>{file.name || `Attachment ${i + 1}`}</span>
-                        <LuExternalLink className="h-4 w-4 shrink-0 text-emerald-700" />
-                      </a>
-                    ))}
-                  </div>
-                </section>
-              )}
+              {extraAttachments.length > 0 ? (
+                <AttachmentSection
+                  title="Attachments"
+                  items={extraAttachments}
+                  onPreview={(item) => setPreviewItem({ ...item, kind: "file", openUrl: item.url })}
+                  onCopy={handleCopy}
+                />
+              ) : null}
+
+              <LinkSection
+                title="Resource Links"
+                items={overviewLinks}
+                onPreview={(item) => setPreviewItem({ ...item, kind: "link", openUrl: item.url })}
+                onCopy={handleCopy}
+                copiedKey={copiedKey}
+              />
               </div>
             </div>
           )}
@@ -454,15 +907,23 @@ export default function ActivityDetailsModal({
                 </p>
               ) : (
                 <div className="space-y-4">
-                {activity.submissions.map((sub) => (
-                  <article
-                    key={sub.id}
-                    className={`overflow-hidden rounded-3xl border shadow-sm ${
-                      sub.is_late
-                        ? "border-rose-200 bg-[linear-gradient(135deg,_#fffaf9_0%,_#fff1ee_100%)]"
-                        : "border-emerald-100 bg-white"
-                    }`}
-                  >
+                {activity.submissions.map((sub) => {
+                  const submittedFiles = (Array.isArray(sub.attachments) ? sub.attachments : [])
+                    .map((attachment, index) => buildAttachmentMeta(attachment, `File ${index + 1}`, "Submitted file"))
+                    .filter(Boolean);
+                  const studentLinks = extractLinksFromText(sub.text_answer || "")
+                    .map(buildLinkMeta)
+                    .filter(Boolean);
+
+                  return (
+                    <article
+                      key={sub.id}
+                      className={`overflow-hidden rounded-3xl border shadow-sm ${
+                        sub.is_late
+                          ? "border-rose-200 bg-[linear-gradient(135deg,_#fffaf9_0%,_#fff1ee_100%)]"
+                          : "border-emerald-100 bg-white"
+                      }`}
+                    >
                     <div className="border-b border-black/5 px-5 py-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -501,7 +962,7 @@ export default function ActivityDetailsModal({
                       </div>
                     </div>
 
-                    <div className="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.85fr)]">
+                    <div className="grid gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.95fr)]">
                       <div className="space-y-4">
                         {sub.feedback ? (
                           <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
@@ -523,54 +984,42 @@ export default function ActivityDetailsModal({
                             </p>
                           ) : (
                             <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-gray-800">
-                              {sub.text_answer}
+                              {renderInlineLinkedText(sub.text_answer)}
                             </p>
                           )}
                           </div>
                         )}
+
+                        {studentLinks.length > 0 ? (
+                          <LinkSection
+                            title="Links In Response"
+                            items={studentLinks}
+                            onPreview={(item) => setPreviewItem({ ...item, kind: "link", openUrl: item.url })}
+                            onCopy={handleCopy}
+                            copiedKey={copiedKey}
+                          />
+                        ) : null}
                       </div>
 
                       <div className="space-y-4">
-                      {sub.link && (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                            Student Link
-                          </p>
-                          <a
-                            href={sub.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 px-4 py-3 text-sm font-medium text-emerald-800 transition hover:bg-emerald-50"
-                          >
-                            <span className="break-all">{sub.link}</span>
-                            <LuExternalLink className="h-4 w-4 shrink-0" />
-                          </a>
-                        </div>
-                      )}
+                      {sub.link ? (
+                        <LinkSection
+                          title="Student Link"
+                          items={[buildLinkMeta(sub.link)].filter(Boolean)}
+                          onPreview={(item) => setPreviewItem({ ...item, kind: "link", openUrl: item.url })}
+                          onCopy={handleCopy}
+                          copiedKey={copiedKey}
+                        />
+                      ) : null}
 
-                      {Array.isArray(sub.attachments) && sub.attachments.length > 0 && (
-                        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                            Submitted Files
-                          </p>
-                          <div className="mt-3 space-y-2">
-                            {sub.attachments.map((attachment, index) => (
-                              <a
-                                key={attachment.id || index}
-                                href={attachment.file}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-emerald-50"
-                              >
-                                <span className="break-all">
-                                  {attachment.file ? decodeURIComponent(String(attachment.file).split("/").pop().split("?")[0]) : `File ${index + 1}`}
-                                </span>
-                                <LuExternalLink className="h-4 w-4 shrink-0 text-emerald-700" />
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      {submittedFiles.length > 0 ? (
+                        <AttachmentSection
+                          title="Submitted Files"
+                          items={submittedFiles}
+                          onPreview={(item) => setPreviewItem({ ...item, kind: "file", openUrl: item.url })}
+                          onCopy={handleCopy}
+                        />
+                      ) : null}
                     </div>
                     </div>
 
@@ -632,7 +1081,8 @@ export default function ActivityDetailsModal({
                       </div>
                     )}
                   </article>
-                ))}
+                );
+                })}
                 </div>
               )}
             </div>
@@ -640,6 +1090,8 @@ export default function ActivityDetailsModal({
         </div>
       </div>
     </div>
+    <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} onCopy={handleCopy} copiedKey={copiedKey} />
+    </>
   );
 }
 
