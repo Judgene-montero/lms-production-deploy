@@ -648,7 +648,7 @@ export default function ActivityDetailsModal({
     <div
       className={
         isPageMode
-          ? "min-h-screen bg-[linear-gradient(180deg,_#f8fcfa_0%,_#ffffff_24%,_#f7fbf9_100%)] px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6"
+          ? "min-h-screen bg-[linear-gradient(180deg,_#f8fcfa_0%,_#ffffff_24%,_#f7fbf9_100%)] px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 lg:px-4 lg:py-2"
           : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4"
       }
       onClick={isPageMode ? undefined : onClose}
@@ -657,7 +657,7 @@ export default function ActivityDetailsModal({
       <div
         className={
           isPageMode
-            ? "mx-auto flex w-full max-w-full flex-col overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-[0_24px_80px_rgba(16,24,40,0.08)] sm:max-w-6xl sm:rounded-[32px] lg:h-[calc(100vh-40px)] lg:max-h-[calc(100vh-40px)]"
+            ? "mx-auto flex w-full max-w-full flex-col overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-[0_24px_80px_rgba(16,24,40,0.08)] sm:max-w-6xl sm:rounded-[32px] lg:h-[calc(100vh-12px)] lg:max-h-[calc(100vh-12px)]"
             : "flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl sm:max-h-[90vh] sm:rounded-3xl"
         }
         onClick={isPageMode ? undefined : (e) => e.stopPropagation()}
