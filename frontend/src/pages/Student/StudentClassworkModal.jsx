@@ -397,7 +397,7 @@ function AttachmentCard({ attachment, onPreview, onCopy }) {
 
   return (
     <article className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
+      <div className="flex min-w-0 flex-col gap-4 p-4 sm:flex-row sm:items-start">
         <div className="flex h-20 w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.9),rgba(248,250,252,1))] sm:h-24 sm:w-28">
           {attachment.isImage && attachment.url ? (
             <img src={attachment.url} alt={attachment.name} className="h-full w-full object-cover" />
@@ -411,21 +411,21 @@ function AttachmentCard({ attachment, onPreview, onCopy }) {
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-slate-900" title={attachment.name}>
                 {attachment.name}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 break-words text-xs text-slate-500">
                 {humanizeFileType(attachment)}{attachment.size ? ` | ${formatFileSize(attachment.size)}` : ""}
               </p>
             </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+            <span className="w-fit shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
               {attachment.sourceLabel}
             </span>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex min-w-0 flex-wrap gap-2">
             <button
               type="button"
               onClick={() => (previewAvailable ? onPreview(attachment) : window.open(attachment.url, "_blank", "noopener,noreferrer"))}
@@ -656,7 +656,7 @@ function SubmissionPane({
             </div>
           )}
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+          <div className="mt-4 space-y-4">
             <AttachmentSection
               title="Submitted Files"
               items={submittedFiles}
@@ -665,7 +665,7 @@ function SubmissionPane({
               emptyText="No files were attached."
             />
 
-            <div className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <section className={sectionCardClass}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Feedback</p>
                 <p className="whitespace-pre-line break-words text-sm leading-6 text-slate-700">
