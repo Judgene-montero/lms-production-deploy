@@ -371,8 +371,8 @@ function AttachmentCard({ attachment, onPreview, onCopy }) {
 
   return (
     <article className="overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-sm">
-      <div className="flex min-w-0 flex-col gap-4 p-4 sm:flex-row sm:items-start">
-        <div className="flex h-20 w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-emerald-100 bg-[linear-gradient(135deg,rgba(236,253,245,0.9),rgba(248,250,252,1))] sm:h-24 sm:w-28">
+      <div className="flex min-w-0 flex-col gap-4 p-4 2xl:flex-row 2xl:items-start">
+        <div className="flex h-24 w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-emerald-100 bg-[linear-gradient(135deg,rgba(236,253,245,0.9),rgba(248,250,252,1))] 2xl:h-24 2xl:w-28">
           {attachment.isImage && attachment.url ? (
             <img src={attachment.url} alt={attachment.name} className="h-full w-full object-cover" />
           ) : (
@@ -383,7 +383,7 @@ function AttachmentCard({ attachment, onPreview, onCopy }) {
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-col gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-slate-900" title={attachment.name}>
                 {attachment.name}
