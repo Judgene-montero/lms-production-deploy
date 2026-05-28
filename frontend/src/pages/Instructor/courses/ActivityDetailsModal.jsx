@@ -657,7 +657,7 @@ export default function ActivityDetailsModal({
       <div
         className={
           isPageMode
-            ? "mx-auto flex w-full max-w-full flex-col overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-[0_24px_80px_rgba(16,24,40,0.08)] sm:max-w-6xl sm:rounded-[32px]"
+            ? "mx-auto flex w-full max-w-full flex-col overflow-hidden rounded-[24px] border border-emerald-100 bg-white shadow-[0_24px_80px_rgba(16,24,40,0.08)] sm:max-w-6xl sm:rounded-[32px] lg:h-[calc(100vh-120px)] lg:max-h-[calc(100vh-120px)]"
             : "flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl sm:max-h-[90vh] sm:rounded-3xl"
         }
         onClick={isPageMode ? undefined : (e) => e.stopPropagation()}
@@ -665,7 +665,7 @@ export default function ActivityDetailsModal({
         aria-modal={isPageMode ? undefined : "true"}
         aria-label={activity.title || "Classwork details"}
       >
-        <div className="sticky top-0 z-10 border-b border-emerald-100 bg-white/95 px-3 py-3 backdrop-blur sm:px-6 sm:py-4">
+        <div className="sticky top-0 z-10 shrink-0 border-b border-emerald-100 bg-white/95 px-3 py-3 backdrop-blur sm:px-6 sm:py-4">
           <div className="rounded-[22px] border border-emerald-100 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_38%),linear-gradient(135deg,_#fcfffd_0%,_#f2fbf6_48%,_#eefcf5_100%)] p-4 sm:rounded-[24px] sm:p-6">
           <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 w-full">
@@ -758,7 +758,7 @@ export default function ActivityDetailsModal({
           </div>
         </div>
 
-        <div className="border-b border-emerald-100 bg-gradient-to-r from-white to-emerald-50/60 px-3 py-3 sm:px-5">
+        <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-white to-emerald-50/60 px-3 py-3 sm:px-5">
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               onClick={() => setActiveTab("instructions")}
@@ -786,7 +786,13 @@ export default function ActivityDetailsModal({
           </div>
         </div>
 
-        <div className={isPageMode ? "w-full max-w-full overflow-hidden bg-[linear-gradient(180deg,_#ffffff_0%,_#f8fcfa_100%)] px-3 py-4 sm:px-6 sm:py-5" : "max-h-[70vh] overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"}>
+        <div
+          className={
+            isPageMode
+              ? "w-full max-w-full overflow-hidden bg-[linear-gradient(180deg,_#ffffff_0%,_#f8fcfa_100%)] px-3 py-4 sm:px-6 sm:py-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+              : "max-h-[70vh] overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
+          }
+        >
           {activeTab === "instructions" && (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.9fr)]">
               <div className="min-w-0 space-y-4 sm:space-y-5">
