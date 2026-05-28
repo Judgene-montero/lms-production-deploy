@@ -49,6 +49,20 @@ const getSubmissionSummary = (submissions = []) => {
   };
 };
 
+const getSubmissionStatusLabel = (submission) => {
+  if (submission?.grade !== null && submission?.grade !== undefined) return "Graded";
+  if (submission?.feedback) return "Returned";
+  if (submission?.is_late) return "Late";
+  return "Submitted";
+};
+
+const getSubmissionStatusClass = (status) => {
+  if (status === "Graded") return "bg-emerald-100 text-emerald-700";
+  if (status === "Returned") return "bg-blue-100 text-blue-700";
+  if (status === "Late") return "bg-rose-100 text-rose-700";
+  return "bg-slate-100 text-slate-700";
+};
+
 const parseStructuredTextAnswer = (value) => {
   if (!value || typeof value !== "string") return null;
   try {
@@ -506,6 +520,171 @@ function LinkSection({ title, items, onPreview, onCopy, copiedKey }) {
   );
 }
 
+function SubmissionDetailModal({
+  submission,
+  onClose,
+  onPreview,
+  onCopy,
+  copiedKey,
+  onStartGrading,
+  onSubmitGrade,
+  onCancelGrading,
+  gradingTargetId,
+  gradeInput,
+  setGradeInput,
+  feedbackInput,
+  setFeedbackInput,
+  savingGrade,
+  gradeError,
+  onGrade,
+}) {
+  if (!submission) return null;
+
+  const submittedFiles = (Array.isArray(submission.attachments) ? submission.attachments : [])
+    .map((attachment, index) => buildAttachmentMeta(attachment, `File ${index + 1}`, "Submitted file"))
+    .filter(Boolean);
+  const responseLinks = [
+    ...extractLinksFromText(submission.text_answer || ""),
+    ...(submission.link ? [submission.link] : []),
+  ]
+    .map(buildLinkMeta)
+    .filter(Boolean);
+  const statusLabel = getSubmissionStatusLabel(submission);
+  const statusClass = getSubmissionStatusClass(statusLabel);
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-slate-950/60 p-3 sm:p-6" onClick={onClose} role="presentation">
+      <div
+        className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-white shadow-[0_26px_70px_rgba(15,23,42,0.35)]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Submission details for ${submission.student_username || "student"}`}
+      >
+        <div className="flex shrink-0 flex-col gap-3 border-b border-emerald-100 bg-[linear-gradient(135deg,rgba(236,253,245,0.95),rgba(255,255,255,1))] px-4 py-4 sm:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${statusClass}`}>
+                  {statusLabel}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                  {submission.grade !== null && submission.grade !== undefined ? `${submission.grade} pts` : "Not graded"}
+                </span>
+              </div>
+              <h3 className="mt-2 break-words text-2xl font-semibold text-emerald-950">{submission.student_username}</h3>
+              <p className="mt-1 text-sm text-emerald-900/75">Submitted {formatDateTime(submission.submitted_at)}</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {onGrade ? (
+                gradingTargetId !== submission.id ? (
+                  <button type="button" onClick={() => onStartGrading(submission)} className={solidActionButtonClass}>
+                    View & Grade
+                  </button>
+                ) : null
+              ) : null}
+              <button type="button" onClick={onClose} className={actionButtonClass}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,_#ffffff_0%,_#f8fcfa_100%)] px-4 py-4 sm:px-6 sm:py-5">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.95fr)]">
+            <div className="min-w-0 space-y-4">
+              {submission.feedback ? (
+                <section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Instructor Feedback</p>
+                  <p className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-800">{submission.feedback}</p>
+                </section>
+              ) : null}
+
+              <section className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Student Answer</p>
+                {submission.text_answer ? (
+                  parseStructuredTextAnswer(submission.text_answer)?.answers ? (
+                    <p className="mt-2 text-sm text-gray-700">
+                      Structured response submitted. Open the submission review workflow if you need the raw payload.
+                    </p>
+                  ) : (
+                    <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-gray-800">
+                      {renderInlineLinkedText(submission.text_answer)}
+                    </p>
+                  )
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">No text answer included.</p>
+                )}
+              </section>
+
+              <LinkSection
+                title="Detected Links"
+                items={responseLinks}
+                onPreview={(item) => onPreview({ ...item, kind: "link", openUrl: item.url })}
+                onCopy={onCopy}
+                copiedKey={copiedKey}
+              />
+            </div>
+
+            <div className="min-w-0 space-y-4">
+              <AttachmentSection
+                title="Submitted Files"
+                items={submittedFiles}
+                onPreview={(item) => onPreview({ ...item, kind: "file", openUrl: item.url })}
+                onCopy={onCopy}
+                emptyText="No files submitted."
+              />
+
+              {onGrade && gradingTargetId === submission.id ? (
+                <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                  <p className="text-sm font-semibold text-emerald-900">Grade Submission</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-sm text-gray-700">
+                      <span>Score</span>
+                      <input
+                        type="number"
+                        value={gradeInput}
+                        onChange={(event) => setGradeInput(event.target.value)}
+                        className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
+                        placeholder="e.g. 95"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm text-gray-700 md:col-span-2">
+                      <span>Feedback</span>
+                      <textarea
+                        value={feedbackInput}
+                        onChange={(event) => setFeedbackInput(event.target.value)}
+                        rows={3}
+                        className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
+                        placeholder="Optional feedback"
+                      />
+                    </label>
+                  </div>
+                  {gradeError ? <p className="text-sm text-red-600">{gradeError}</p> : null}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onSubmitGrade(submission)}
+                      disabled={savingGrade}
+                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                    >
+                      {savingGrade ? "Saving..." : "Save Grade"}
+                    </button>
+                    <button type="button" onClick={onCancelGrading} className="rounded-xl border border-gray-300 px-4 py-2 text-sm text-gray-700">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ActivityDetailsModal({
   activity,
   onClose,
@@ -523,18 +702,26 @@ export default function ActivityDetailsModal({
   const [gradeError, setGradeError] = useState("");
   const [previewItem, setPreviewItem] = useState(null);
   const [copiedKey, setCopiedKey] = useState("");
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
+  const [submissionSearch, setSubmissionSearch] = useState("");
+  const [submissionFilter, setSubmissionFilter] = useState("all");
+  const [submissionSort, setSubmissionSort] = useState("newest");
 
   const isPageMode = mode === "page";
 
   useEffect(() => {
     if (isPageMode) return undefined;
     const handleEscape = (event) => {
-      if (event.key === "Escape") onClose?.();
+      if (event.key === "Escape") {
+        if (previewItem) setPreviewItem(null);
+        else if (selectedSubmissionId) setSelectedSubmissionId(null);
+        else onClose?.();
+      }
     };
 
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [isPageMode, onClose]);
+  }, [isPageMode, onClose, previewItem, selectedSubmissionId]);
 
   const mappedComponent = mapActivityToComponent(activity?.activity_type_name || activity?.activity_type);
   const submissionSummary = getSubmissionSummary(activity?.submissions);
@@ -561,6 +748,61 @@ export default function ActivityDetailsModal({
       .map(buildLinkMeta)
       .filter(Boolean);
   }, [activity]);
+  const normalizedSubmissionRows = useMemo(
+    () =>
+      (Array.isArray(activity?.submissions) ? activity.submissions : []).map((submission) => {
+        const textValue = String(submission?.text_answer || "").trim();
+        const filesCount = Array.isArray(submission?.attachments) ? submission.attachments.length : 0;
+        const linkItems = [
+          ...extractLinksFromText(textValue),
+          ...(submission?.link ? [submission.link] : []),
+        ]
+          .map(buildLinkMeta)
+          .filter(Boolean);
+        const status = getSubmissionStatusLabel(submission);
+        return {
+          ...submission,
+          status,
+          statusClass: getSubmissionStatusClass(status),
+          hasTextAnswer: Boolean(textValue),
+          filesCount,
+          linksCount: linkItems.length,
+          linkItems,
+        };
+      }),
+    [activity?.submissions]
+  );
+  const filteredSubmissions = useMemo(() => {
+    const searchNeedle = submissionSearch.trim().toLowerCase();
+    let rows = [...normalizedSubmissionRows];
+
+    if (searchNeedle) {
+      rows = rows.filter((item) => String(item.student_username || "").toLowerCase().includes(searchNeedle));
+    }
+
+    if (submissionFilter === "graded") {
+      rows = rows.filter((item) => item.grade !== null && item.grade !== undefined);
+    } else if (submissionFilter === "not_graded") {
+      rows = rows.filter((item) => item.grade === null || item.grade === undefined);
+    } else if (submissionFilter === "late") {
+      rows = rows.filter((item) => Boolean(item.is_late));
+    } else if (submissionFilter === "submitted") {
+      rows = rows.filter((item) => item.status === "Submitted" || item.status === "Returned");
+    }
+
+    rows.sort((left, right) => {
+      if (submissionSort === "oldest") return new Date(left.submitted_at || 0) - new Date(right.submitted_at || 0);
+      if (submissionSort === "name_asc") return String(left.student_username || "").localeCompare(String(right.student_username || ""));
+      if (submissionSort === "name_desc") return String(right.student_username || "").localeCompare(String(left.student_username || ""));
+      return new Date(right.submitted_at || 0) - new Date(left.submitted_at || 0);
+    });
+
+    return rows;
+  }, [normalizedSubmissionRows, submissionFilter, submissionSearch, submissionSort]);
+  const selectedSubmission = useMemo(
+    () => normalizedSubmissionRows.find((item) => item.id === selectedSubmissionId) || null,
+    [normalizedSubmissionRows, selectedSubmissionId]
+  );
   if (!activity) return null;
 
   const summaryCards = [
@@ -912,190 +1154,162 @@ export default function ActivityDetailsModal({
                   No submissions yet.
                 </p>
               ) : (
-                <div className="space-y-4">
-                {activity.submissions.map((sub) => {
-                  const submittedFiles = (Array.isArray(sub.attachments) ? sub.attachments : [])
-                    .map((attachment, index) => buildAttachmentMeta(attachment, `File ${index + 1}`, "Submitted file"))
-                    .filter(Boolean);
-                  const studentLinks = extractLinksFromText(sub.text_answer || "")
-                    .map(buildLinkMeta)
-                    .filter(Boolean);
-
-                  return (
-                    <article
-                      key={sub.id}
-                      className={`overflow-hidden rounded-3xl border shadow-sm ${
-                        sub.is_late
-                          ? "border-rose-200 bg-[linear-gradient(135deg,_#fffaf9_0%,_#fff1ee_100%)]"
-                          : "border-emerald-100 bg-white"
-                      }`}
-                    >
-                    <div className="border-b border-black/5 px-5 py-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-lg font-semibold text-gray-900">{sub.student_username}</p>
-                            {sub.grade !== null && sub.grade !== undefined && (
-                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                                Graded
-                              </span>
-                            )}
-                            {sub.is_late && (
-                              <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700">
-                                Late
-                              </span>
-                            )}
-                          </div>
-                          <p className="mt-1 text-sm text-gray-500">
-                            Submitted {formatDateTime(sub.submitted_at)}
-                          </p>
-                        </div>
-
-                        <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[290px]">
-                          <div className="rounded-2xl bg-emerald-50/70 px-4 py-3">
-                            <p className="text-xs uppercase tracking-wide text-gray-500">Score</p>
-                            <p className="mt-1 text-sm font-semibold text-emerald-950">
-                              {sub.grade !== null && sub.grade !== undefined ? `${sub.grade} pts` : "Not graded"}
-                            </p>
-                          </div>
-                          <div className="rounded-2xl bg-emerald-50/70 px-4 py-3">
-                            <p className="text-xs uppercase tracking-wide text-gray-500">Feedback</p>
-                            <p className="mt-1 text-sm font-semibold text-emerald-950">
-                              {sub.feedback ? "Available" : "No feedback yet"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 px-4 py-4 sm:px-5 sm:py-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.95fr)]">
-                      <div className="min-w-0 space-y-4">
-                        {sub.feedback ? (
-                          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                              Instructor Feedback
-                            </p>
-                            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-800">{sub.feedback}</p>
-                          </div>
-                        ) : null}
-
-                        {sub.text_answer && (
-                          <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                            Student Answer
-                          </p>
-                          {parseStructuredTextAnswer(sub.text_answer)?.answers ? (
-                            <p className="mt-2 text-sm text-gray-700">
-                              Structured response submitted. Open the submission review workflow if you need the raw payload.
-                            </p>
-                          ) : (
-                            <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-gray-800">
-                              {renderInlineLinkedText(sub.text_answer)}
-                            </p>
-                          )}
-                          </div>
-                        )}
-
-                        {studentLinks.length > 0 ? (
-                          <LinkSection
-                            title="Links In Response"
-                            items={studentLinks}
-                            onPreview={(item) => setPreviewItem({ ...item, kind: "link", openUrl: item.url })}
-                            onCopy={handleCopy}
-                            copiedKey={copiedKey}
+                <section className="space-y-4">
+                  <div className="rounded-3xl border border-emerald-100 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.7fr)_minmax(180px,0.7fr)]">
+                        <label className="flex flex-col gap-1 text-sm text-gray-700">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Search</span>
+                          <input
+                            type="text"
+                            value={submissionSearch}
+                            onChange={(event) => setSubmissionSearch(event.target.value)}
+                            placeholder="Search student name"
+                            className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
                           />
-                        ) : null}
-                      </div>
-
-                      <div className="min-w-0 space-y-4">
-                      {sub.link ? (
-                        <LinkSection
-                          title="Student Link"
-                          items={[buildLinkMeta(sub.link)].filter(Boolean)}
-                          onPreview={(item) => setPreviewItem({ ...item, kind: "link", openUrl: item.url })}
-                          onCopy={handleCopy}
-                          copiedKey={copiedKey}
-                        />
-                      ) : null}
-
-                      {submittedFiles.length > 0 ? (
-                        <AttachmentSection
-                          title="Submitted Files"
-                          items={submittedFiles}
-                          onPreview={(item) => setPreviewItem({ ...item, kind: "file", openUrl: item.url })}
-                          onCopy={handleCopy}
-                        />
-                      ) : null}
-                    </div>
-                    </div>
-
-                    {onGrade && (
-                      <div className="border-t border-black/5 px-5 py-4">
-                        {gradingTargetId !== sub.id ? (
-                          <button
-                            type="button"
-                            onClick={() => startGrading(sub)}
-                            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 transition-all duration-200 hover:bg-emerald-100"
+                        </label>
+                        <label className="flex flex-col gap-1 text-sm text-gray-700">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Filter</span>
+                          <select
+                            value={submissionFilter}
+                            onChange={(event) => setSubmissionFilter(event.target.value)}
+                            className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
                           >
-                            View & Grade
-                          </button>
-                        ) : (
-                          <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
-                            <p className="text-sm font-semibold text-emerald-900">Grade Submission</p>
-                            <div className="grid gap-3 md:grid-cols-2">
-                              <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                <span>Score</span>
-                                <input
-                                  type="number"
-                                  value={gradeInput}
-                                  onChange={(event) => setGradeInput(event.target.value)}
-                                  className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
-                                  placeholder="e.g. 95"
-                                />
-                              </label>
-                              <label className="flex flex-col gap-1 text-sm text-gray-700 md:col-span-2">
-                                <span>Feedback</span>
-                                <textarea
-                                  value={feedbackInput}
-                                  onChange={(event) => setFeedbackInput(event.target.value)}
-                                  rows={3}
-                                  className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
-                                  placeholder="Optional feedback"
-                                />
-                              </label>
-                            </div>
-                            {gradeError && <p className="text-sm text-red-600">{gradeError}</p>}
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => submitGrade(sub)}
-                                disabled={savingGrade}
-                                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-                              >
-                                {savingGrade ? "Saving..." : "Save Grade"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={cancelGrading}
-                                className="rounded-xl border border-gray-300 px-4 py-2 text-sm text-gray-700"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                            <option value="all">All</option>
+                            <option value="submitted">Submitted</option>
+                            <option value="not_graded">Not graded</option>
+                            <option value="graded">Graded</option>
+                            <option value="late">Late</option>
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1 text-sm text-gray-700">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Sort</span>
+                          <select
+                            value={submissionSort}
+                            onChange={(event) => setSubmissionSort(event.target.value)}
+                            className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
+                          >
+                            <option value="newest">Newest first</option>
+                            <option value="oldest">Oldest first</option>
+                            <option value="name_asc">Student A-Z</option>
+                            <option value="name_desc">Student Z-A</option>
+                          </select>
+                        </label>
                       </div>
-                    )}
-                  </article>
-                );
-                })}
-                </div>
+                      <p className="text-sm text-gray-500">
+                        Showing {filteredSubmissions.length} of {normalizedSubmissionRows.length} submissions
+                      </p>
+                    </div>
+                  </div>
+
+                  {filteredSubmissions.length === 0 ? (
+                    <div className="rounded-3xl border border-dashed border-emerald-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
+                      No matching students found.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="hidden overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-sm lg:block">
+                        <div className="grid grid-cols-[minmax(0,1.4fr)_0.8fr_1fr_0.7fr_0.7fr_0.7fr_0.9fr] gap-3 border-b border-emerald-100 bg-emerald-50/70 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                          <span>Student</span>
+                          <span>Status</span>
+                          <span>Submitted</span>
+                          <span>Files</span>
+                          <span>Links</span>
+                          <span>Score</span>
+                          <span>Action</span>
+                        </div>
+                        <div className="divide-y divide-emerald-100">
+                          {filteredSubmissions.map((submission) => (
+                            <div
+                              key={submission.id}
+                              className="grid grid-cols-[minmax(0,1.4fr)_0.8fr_1fr_0.7fr_0.7fr_0.7fr_0.9fr] gap-3 px-4 py-4 text-sm text-gray-700"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-gray-900" title={submission.student_username}>
+                                  {submission.student_username}
+                                </p>
+                                <p className="mt-1 text-xs text-gray-500">
+                                  {submission.hasTextAnswer ? "Has answer" : "No answer"}{submission.feedback ? " • Feedback" : ""}
+                                </p>
+                              </div>
+                              <div>
+                                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${submission.statusClass}`}>
+                                  {submission.status}
+                                </span>
+                              </div>
+                              <div className="text-xs leading-5 text-gray-600">{formatDateTime(submission.submitted_at)}</div>
+                              <div className="text-sm font-medium text-gray-900">{submission.filesCount}</div>
+                              <div className="text-sm font-medium text-gray-900">{submission.linksCount}</div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {submission.grade !== null && submission.grade !== undefined ? `${submission.grade} pts` : "Not graded"}
+                              </div>
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedSubmissionId(submission.id)}
+                                  className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+                                >
+                                  {onGrade ? "View & Grade" : "View Submission"}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 lg:hidden">
+                        {filteredSubmissions.map((submission) => (
+                          <article key={submission.id} className="rounded-3xl border border-emerald-100 bg-white p-4 shadow-sm">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="min-w-0 flex-1 break-words font-semibold text-gray-900">{submission.student_username}</p>
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${submission.statusClass}`}>
+                                {submission.status}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm text-gray-500">Submitted {formatDateTime(submission.submitted_at)}</p>
+                            <p className="mt-2 text-sm text-gray-700">
+                              Files: {submission.filesCount} • Links: {submission.linksCount} • Score:{" "}
+                              {submission.grade !== null && submission.grade !== undefined ? `${submission.grade} pts` : "Not graded"}
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedSubmissionId(submission.id)}
+                                className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+                              >
+                                {onGrade ? "View & Grade" : "View Submission"}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </section>
               )}
             </div>
           )}
         </div>
       </div>
     </div>
+    <SubmissionDetailModal
+      submission={selectedSubmission}
+      onClose={() => setSelectedSubmissionId(null)}
+      onPreview={setPreviewItem}
+      onCopy={handleCopy}
+      copiedKey={copiedKey}
+      onStartGrading={startGrading}
+      onSubmitGrade={submitGrade}
+      onCancelGrading={cancelGrading}
+      gradingTargetId={gradingTargetId}
+      gradeInput={gradeInput}
+      setGradeInput={setGradeInput}
+      feedbackInput={feedbackInput}
+      setFeedbackInput={setFeedbackInput}
+      savingGrade={savingGrade}
+      gradeError={gradeError}
+      onGrade={onGrade}
+    />
     <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} onCopy={handleCopy} copiedKey={copiedKey} />
     </>
   );
