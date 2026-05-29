@@ -1126,7 +1126,7 @@ class CourseActivitySerializer(serializers.ModelSerializer):
         # Validate question integrity at backend level (authoritative checks).
         question_items = data.get("quiz_questions") or []
         seen_question_ids = set()
-        seen_question_texts = set()
+        seen_question_texts = {}
         for index, question in enumerate(question_items, start=1):
             if not isinstance(question, dict):
                 raise serializers.ValidationError({"sections": f"Question {index} must be an object."})
@@ -1140,9 +1140,33 @@ class CourseActivitySerializer(serializers.ModelSerializer):
 
             normalized_text = re.sub(r"\s+", " ", str(question.get("question_text") or "").strip().lower())
             if normalized_text:
-                if normalized_text in seen_question_texts:
-                    raise serializers.ValidationError({"sections": f"Duplicate question text detected at question {index}."})
-                seen_question_texts.add(normalized_text)
+                current_type = str(question.get("type") or "").strip().lower()
+                current_section_key = (
+                    question.get("section_id")
+                    or str(question.get("section_title") or "").strip().lower()
+                    or ""
+                )
+                first_seen = seen_question_texts.get(normalized_text)
+                if first_seen:
+                    same_type = first_seen.get("type") == current_type
+                    same_section = first_seen.get("section_key") == current_section_key
+                    if same_type and same_section:
+                        raise serializers.ValidationError(
+                            {
+                                "sections": (
+                                    "Duplicate question text detected within the same section/type: "
+                                    f"Q{first_seen['index']} ({first_seen['type_label']}) and "
+                                    f"Q{index} ({current_type.replace('_', ' ') or 'question'})."
+                                )
+                            }
+                        )
+                else:
+                    seen_question_texts[normalized_text] = {
+                        "index": index,
+                        "type": current_type,
+                        "type_label": current_type.replace("_", " ").title() or "Question",
+                        "section_key": current_section_key,
+                    }
 
             raw_points = question.get("points", 1)
             try:

@@ -34,13 +34,24 @@ function DiagnosticList({ title, issues, emptyText, className, onIssueClick }) {
         <ul className="mt-2 space-y-1 text-sm">
           {issues.map((issue) => (
             <li key={issue.id}>
-              <button
-                type="button"
-                className="w-full rounded px-1 py-0.5 text-left hover:bg-black/5"
-                onClick={() => onIssueClick?.(issue)}
-              >
-                {issue.message}
-              </button>
+              <div className="flex items-start justify-between gap-2 rounded px-1 py-0.5 hover:bg-black/5">
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => onIssueClick?.(issue)}
+                >
+                  {issue.message}
+                </button>
+                {issue.anchorId ? (
+                  <button
+                    type="button"
+                    onClick={() => onIssueClick?.(issue)}
+                    className="shrink-0 rounded border border-current/30 px-2 py-0.5 text-[11px] font-medium"
+                  >
+                    Go to question
+                  </button>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
@@ -60,8 +71,9 @@ export default function PrePublishDiagnosticsPanel({ payload, computedTotalPoint
     const sectionCount = sections.length;
 
     let questionCount = 0;
+    let globalQuestionNumber = 0;
     const questionIdSeen = new Set();
-    const questionTextSeen = new Set();
+    const questionTextSeen = new Map();
 
     if (sectionCount === 0) {
       blockingIssues.push(createIssue({ severity: "blocking", message: "Add at least one section before publishing." }));
@@ -84,6 +96,7 @@ export default function PrePublishDiagnosticsPanel({ payload, computedTotalPoint
       }
 
       sectionQuestions.forEach((question, questionIndex) => {
+        globalQuestionNumber += 1;
         const questionId = question?.id ?? null;
         const questionType = String(question?.type || "multiple_choice");
         const anchorId = buildAnchorId(sectionId, sectionIndex, questionId, questionIndex);
@@ -120,18 +133,31 @@ export default function PrePublishDiagnosticsPanel({ payload, computedTotalPoint
 
         const normalizedText = normalizeQuestionText(questionText);
         if (normalizedText) {
-          if (questionTextSeen.has(normalizedText)) {
-            highIssues.push(
-              createIssue({
-                severity: "high",
-                message: `Duplicate question text found in Section ${sectionIndex + 1}, Question ${questionIndex + 1}.`,
-                sectionId,
-                questionId,
-                anchorId,
-              })
-            );
+          const firstSeen = questionTextSeen.get(normalizedText);
+          if (firstSeen) {
+            const currentTypeLabel = questionType.replaceAll("_", " ");
+            const sameType = firstSeen.questionType === questionType;
+            const sameSection = firstSeen.sectionId === sectionId;
+            const issuePayload = {
+              sectionId,
+              questionId,
+              anchorId,
+              message: sameType && sameSection
+                ? `Possible duplicate question text: Q${firstSeen.displayNumber} ${firstSeen.typeLabel} and Q${globalQuestionNumber} ${currentTypeLabel}.`
+                : `Similar question text detected: Q${firstSeen.displayNumber} ${firstSeen.typeLabel} and Q${globalQuestionNumber} ${currentTypeLabel}. This may be intentional.`,
+            };
+            if (sameType && sameSection) {
+              highIssues.push(createIssue({ severity: "high", ...issuePayload }));
+            } else {
+              advisoryIssues.push(createIssue({ severity: "advisory", ...issuePayload }));
+            }
           } else {
-            questionTextSeen.add(normalizedText);
+            questionTextSeen.set(normalizedText, {
+              sectionId,
+              questionType,
+              typeLabel: questionType.replaceAll("_", " "),
+              displayNumber: globalQuestionNumber,
+            });
           }
         }
 

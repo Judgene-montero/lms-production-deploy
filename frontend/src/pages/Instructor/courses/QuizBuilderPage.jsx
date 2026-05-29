@@ -10,6 +10,29 @@ import QuestionBankSelector from "../../../components/classwork/QuestionBankSele
 const AUTOSAVE_MS = 12000;
 const EMPTY_PREFILL = Object.freeze({});
 
+const QUESTION_STATUS_LABELS = {
+  all: "All statuses",
+  valid: "Valid",
+  has_issue: "Has issue",
+  missing_answer: "Missing answer",
+  duplicate: "Duplicate warning",
+};
+
+const QUESTION_TYPE_FILTERS = [
+  { value: "all", label: "All types" },
+  { value: "multiple_choice", label: "Multiple Choice" },
+  { value: "true_false", label: "True/False" },
+  { value: "identification", label: "Identification" },
+  { value: "short_answer", label: "Short Answer" },
+  { value: "essay", label: "Essay" },
+  { value: "enumeration", label: "Enumeration" },
+];
+
+const buildAnchorId = (sectionId, sectionIndex, questionId, questionIndex) =>
+  `question-${sectionId ?? `idx-${sectionIndex}`}-${questionId ?? `idx-${sectionIndex}-${questionIndex}`}`;
+
+const normalizeQuestionText = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+
 const normalizeOptions = (options = []) =>
   (Array.isArray(options) ? options : [])
     .map((option, index) => {
@@ -291,6 +314,10 @@ function BuilderContent({ mode = "create", initialActivityId = null }) {
   const [error, setError] = useState("");
   const [instructorCourses, setInstructorCourses] = useState([]);
   const [showQuestionBank, setShowQuestionBank] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [focusTarget, setFocusTarget] = useState({ anchorId: "", nonce: 0 });
   const isDirtyRef = useRef(false);
   const sectionsWatchInitialized = useRef(false);
 
@@ -349,6 +376,81 @@ function BuilderContent({ mode = "create", initialActivityId = null }) {
     },
     [computedTotalPoints, sections, settings]
   );
+
+  const questionNavigator = useMemo(() => {
+    const seenTexts = new Map();
+    let displayNumber = 0;
+    return (Array.isArray(sections) ? sections : []).flatMap((section, sectionIndex) => {
+      const sectionId = section?.id ?? `idx-${sectionIndex}`;
+      const sectionTitle = section?.title || `Section ${sectionIndex + 1}`;
+      return (Array.isArray(section?.questions) ? section.questions : []).map((question, questionIndex) => {
+        displayNumber += 1;
+        const questionType = String(question?.type || "multiple_choice");
+        const normalizedText = normalizeQuestionText(question?.question_text);
+        const anchorId = buildAnchorId(sectionId, sectionIndex, question?.id, questionIndex);
+        const options = Array.isArray(question?.options)
+          ? question.options.map((option) => String(option?.text || "").trim()).filter(Boolean)
+          : [];
+        let statusKey = "valid";
+        let statusLabel = "Valid";
+        if (!String(question?.question_text || "").trim()) {
+          statusKey = "has_issue";
+          statusLabel = "Missing text";
+        } else if (questionType === "multiple_choice") {
+          const answer = String(question?.correct_answer || "").trim();
+          if (options.length < 2 || !answer || !options.some((option) => option.toLowerCase() === answer.toLowerCase())) {
+            statusKey = "missing_answer";
+            statusLabel = "Missing answer";
+          }
+        } else if (["short_answer", "identification"].includes(questionType) && !String(question?.correct_answer || "").trim()) {
+          statusKey = "missing_answer";
+          statusLabel = "Missing answer";
+        }
+        if (normalizedText) {
+          const previous = seenTexts.get(normalizedText);
+          if (previous) {
+            const sameType = previous.questionType === questionType;
+            const sameSection = previous.sectionId === sectionId;
+            statusKey = "duplicate";
+            statusLabel = sameType && sameSection ? "Duplicate warning" : "Similar text";
+          } else {
+            seenTexts.set(normalizedText, { questionType, sectionId });
+          }
+        }
+        return {
+          anchorId,
+          displayNumber,
+          sectionId,
+          sectionIndex,
+          sectionTitle,
+          questionType,
+          statusKey,
+          statusLabel,
+          questionText: String(question?.question_text || ""),
+        };
+      });
+    });
+  }, [sections]);
+
+  const sectionNavigator = useMemo(
+    () =>
+      (Array.isArray(sections) ? sections : []).map((section, index) => ({
+        id: section?.id ?? `idx-${index}`,
+        title: section?.title || `Section ${index + 1}`,
+        count: Array.isArray(section?.questions) ? section.questions.length : 0,
+      })),
+    [sections]
+  );
+
+  const firstIssueQuestion = useMemo(
+    () => questionNavigator.find((item) => item.statusKey !== "valid") || null,
+    [questionNavigator]
+  );
+
+  const hasBlockingIssues = useMemo(() => {
+    if (!Array.isArray(sections) || sections.length === 0) return true;
+    return questionNavigator.some((item) => item.statusKey === "missing_answer" || item.statusKey === "has_issue");
+  }, [questionNavigator, sections]);
 
   const saveDraft = useCallback(
     async (manual = false) => {
@@ -520,6 +622,7 @@ function BuilderContent({ mode = "create", initialActivityId = null }) {
   const handleIssueClick = useCallback((issue) => {
     const anchorId = issue?.anchorId;
     if (!anchorId) return;
+    setFocusTarget({ anchorId, nonce: Date.now() });
     const target = document.getElementById(anchorId);
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -529,10 +632,117 @@ function BuilderContent({ mode = "create", initialActivityId = null }) {
     }, 1400);
   }, []);
 
+  const jumpToQuestion = useCallback((anchorId) => {
+    if (!anchorId) return;
+    setFocusTarget({ anchorId, nonce: Date.now() });
+    const target = document.getElementById(anchorId);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("ring-2", "ring-emerald-300");
+    window.setTimeout(() => {
+      target.classList.remove("ring-2", "ring-emerald-300");
+    }, 1400);
+  }, []);
+
   return (
     <div className="mx-auto max-w-7xl space-y-4 pb-24">
-      {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>{error}</span>
+            {firstIssueQuestion ? (
+              <button
+                type="button"
+                onClick={() => jumpToQuestion(firstIssueQuestion.anchorId)}
+                className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700"
+              >
+                Go to issue
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
       {statusText && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{statusText}</p>}
+
+      <section className="sticky top-2 z-10 rounded-2xl border border-emerald-100 bg-white/95 p-4 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-emerald-900">Question Navigator</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {questionNavigator.length} question{questionNavigator.length === 1 ? "" : "s"} loaded. Jump, filter, and review without opening every editor.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search question text"
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              {QUESTION_TYPE_FILTERS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              {Object.entries(QUESTION_STATUS_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {sectionNavigator.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => {
+                const target = document.getElementById(`section-${section.id}`);
+                if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"
+            >
+              {section.title} ({section.count})
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {questionNavigator.map((item) => {
+            const tone =
+              item.statusKey === "valid"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : item.statusKey === "duplicate"
+                ? "border-sky-200 bg-sky-50 text-sky-700"
+                : "border-amber-200 bg-amber-50 text-amber-700";
+            return (
+              <button
+                key={item.anchorId}
+                type="button"
+                onClick={() => jumpToQuestion(item.anchorId)}
+                className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${tone}`}
+                title={`Q${item.displayNumber} ${item.questionType.replaceAll("_", " ")} - ${item.statusLabel}`}
+              >
+                Q{item.displayNumber}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <PrePublishDiagnosticsPanel
         payload={payload}
@@ -546,7 +756,14 @@ function BuilderContent({ mode = "create", initialActivityId = null }) {
         instructorCourses={instructorCourses}
         computedTotalPoints={computedTotalPoints}
       />
-      <SectionBuilder onOpenQuestionBank={() => setShowQuestionBank(true)} />
+      <SectionBuilder
+        onOpenQuestionBank={() => setShowQuestionBank(true)}
+        searchQuery={searchQuery}
+        typeFilter={typeFilter}
+        statusFilter={statusFilter}
+        focusAnchorId={focusTarget.anchorId}
+        focusNonce={focusTarget.nonce}
+      />
 
       <QuestionBankSelector
         courseId={courseId}
@@ -610,7 +827,7 @@ function BuilderContent({ mode = "create", initialActivityId = null }) {
           <button
             type="button"
             onClick={() => saveAssessment("published")}
-            disabled={saving}
+            disabled={saving || hasBlockingIssues}
             className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
           >
             Publish
