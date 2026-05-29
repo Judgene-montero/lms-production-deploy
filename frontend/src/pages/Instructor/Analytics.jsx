@@ -211,7 +211,7 @@ const ModelEvaluationPanel = memo(function ModelEvaluationPanel({ metrics }) {
 });
 
 function Analytics() {
-  const [stats, setStats] = useState({ total_courses: 0 });
+  const [stats, setStats] = useState({ total_courses: 0, total_students: 0 });
   const [recentActivities, setRecentActivities] = useState([]);
   const [studentRiskList, setStudentRiskList] = useState([]);
   const [atRiskStudents, setAtRiskStudents] = useState([]);
@@ -310,7 +310,10 @@ function Analytics() {
       authGet(withParams("/api/ai/course-analytics/", { refresh: 0 })),
     ]).then(([dashboardResult, courseResult]) => {
       if (dashboardResult.status === "fulfilled") {
-        setStats({ total_courses: dashboardResult.value?.total_courses || 0 });
+        setStats({
+          total_courses: dashboardResult.value?.total_courses || 0,
+          total_students: dashboardResult.value?.total_students || 0,
+        });
       }
       if (courseResult.status === "fulfilled") {
         const courseData = courseResult.value || {};
@@ -527,7 +530,7 @@ function Analytics() {
   const insightCards = [
     {
       title: "Total Students",
-      value: selectedCourse === "all" ? aiSummary.total_students : filteredStudentRiskList.length,
+      value: selectedCourse === "all" ? stats.total_students : filteredStudentRiskList.length,
       icon: LuUsers,
     },
     {

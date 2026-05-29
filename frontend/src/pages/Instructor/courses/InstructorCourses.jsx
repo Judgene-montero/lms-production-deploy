@@ -35,6 +35,7 @@ function InstructorCourses() {
   const navigate = useNavigate();
 
   const [courses, setCourses] = useState([]);
+  const [dashboardStats, setDashboardStats] = useState({ total_students: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
@@ -52,7 +53,15 @@ function InstructorCourses() {
     setError("");
 
     try {
-      const data = await authGet("/api/courses/");
+      const [courseData, dashboardData] = await Promise.all([
+        authGet("/api/courses/"),
+        authGet("/api/instructor/dashboard/?refresh=0").catch(() => null),
+      ]);
+      const data = courseData;
+      setDashboardStats({
+        total_students:
+          dashboardData?.total_students == null ? null : Number(dashboardData.total_students),
+      });
       const baseCourses = Array.isArray(data) ? data : [];
       const requiresCountBackfill = baseCourses.some(
         (course) => course?.students_count == null || course?.lessons_count == null
@@ -106,15 +115,16 @@ function InstructorCourses() {
   }, [fetchCourses]);
 
   const summary = useMemo(() => {
-    const totalStudents = courses.reduce((sum, course) => sum + Number(course.students_count || 0), 0);
+    const enrollmentTotal = courses.reduce((sum, course) => sum + Number(course.students_count || 0), 0);
     const totalLessons = courses.reduce((sum, course) => sum + Number(course.lessons_count || 0), 0);
 
     return {
       totalCourses: courses.length,
-      totalStudents,
+      totalStudents:
+        dashboardStats.total_students == null ? enrollmentTotal : Number(dashboardStats.total_students || 0),
       totalLessons,
     };
-  }, [courses]);
+  }, [courses, dashboardStats.total_students]);
 
   const filteredCourses = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -298,6 +308,7 @@ function InstructorCourses() {
               </span>
             </div>
             <p className="mt-3 text-3xl font-bold text-emerald-950">{summary.totalStudents}</p>
+            <p className="mt-1 text-xs text-gray-500">Unique active students across active courses</p>
           </article>
 
           <article className={summaryCardClass}>

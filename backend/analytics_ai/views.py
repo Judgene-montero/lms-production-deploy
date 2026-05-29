@@ -69,6 +69,20 @@ def _should_refresh(request):
     return request.query_params.get("refresh", "1").lower() not in {"0", "false", "no"}
 
 
+def _active_instructor_courses(instructor):
+    return Course.objects.filter(instructor=instructor, is_archived=False)
+
+
+def _unique_active_students_count(instructor):
+    return (
+        _active_instructor_courses(instructor)
+        .filter(students__role="student", students__isnull=False)
+        .values("students__id")
+        .distinct()
+        .count()
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def instructor_dashboard_stats(request):
@@ -81,6 +95,7 @@ def instructor_dashboard_stats(request):
         refresh_instructor_analytics(instructor)
 
     total_courses = Course.objects.filter(instructor=instructor).count()
+    total_students = _unique_active_students_count(instructor)
     pending_submissions = ActivitySubmission.objects.filter(
         activity__course__instructor=instructor,
         status="submitted",
@@ -96,6 +111,7 @@ def instructor_dashboard_stats(request):
     return Response(
         {
             "total_courses": total_courses,
+            "total_students": total_students,
             "pending_submissions": pending_submissions,
             "notifications": 0,
             "risk_distribution": {

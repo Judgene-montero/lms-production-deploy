@@ -35,7 +35,7 @@ const SkeletonPanel = ({ className = "h-48" }) => <div className={`animate-pulse
 
 const Home = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ total_courses: 0, pending_submissions: 0, notifications: 0 });
+  const [stats, setStats] = useState({ total_courses: 0, total_students: 0, pending_submissions: 0, notifications: 0 });
   const [recentActivities, setRecentActivities] = useState([]);
   const [aiSummary, setAiSummary] = useState({ total_students: 0, average_engagement: 0 });
   const [courseAnalytics, setCourseAnalytics] = useState([]);
@@ -66,6 +66,7 @@ const Home = () => {
         const dashboardData = dashboardResult.value || {};
         setStats({
           total_courses: dashboardData?.total_courses || 0,
+          total_students: dashboardData?.total_students || 0,
           pending_submissions: dashboardData?.pending_submissions || 0,
           notifications: dashboardData?.notifications || 0,
         });
@@ -207,9 +208,9 @@ const Home = () => {
     },
     {
       title: "Total Students",
-      value: aiSummary.total_students,
+      value: stats.total_students,
       icon: LuUsers,
-      helper: "Across all assigned courses",
+      helper: "Unique active students across active courses",
     },
     {
       title: "Avg Completion Rate",
