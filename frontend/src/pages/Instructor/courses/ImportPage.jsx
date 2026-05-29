@@ -19,7 +19,9 @@ function riskFromScore(score) {
 function classifyIssue(message) {
   const text = String(message || "").toLowerCase();
   if (text.includes("ocr")) return { type: "ocr", severity: "MEDIUM", autoFixable: false };
-  if (text.includes("mcq") || text.includes("does not match any option")) return { type: "mcq_mapping", severity: "HIGH", autoFixable: true };
+  if (text.includes("mcq") || text.includes("does not match any option") || text.includes("choices were not fully detected")) {
+    return { type: "mcq_mapping", severity: "HIGH", autoFixable: true };
+  }
   if (text.includes("duplicate") || text.includes("renumbered")) return { type: "numbering", severity: "HIGH", autoFixable: true };
   if (text.includes("missing answer")) return { type: "missing_answer", severity: "HIGH", autoFixable: false };
   if (text.includes("empty question") || text.includes("invalid or empty")) return { type: "empty_question", severity: "HIGH", autoFixable: true };
@@ -73,7 +75,9 @@ function issueHeadline(issue) {
     case "missing_answer":
       return "Missing answer key";
     case "mcq_mapping":
-      return "Answer does not match the detected choices";
+      return String(issue.message || "").toLowerCase().includes("choices were not fully detected")
+        ? "MCQ choices were not fully detected"
+        : "Answer does not match the detected choices";
     case "numbering":
       return "Question numbering needs review";
     case "empty_question":
@@ -141,6 +145,95 @@ function typeRuleText(type) {
   return "Rule: general validation.";
 }
 
+function buildQuestionIssues(question, seenNumbers) {
+  const warnings = [];
+  const qNumber = Number(question?.number);
+  const qText = asDisplayText(question?.question_text ?? question?.question, "").trim();
+  const qType = String(question?.type || "identification").toLowerCase();
+
+  if (Number.isFinite(qNumber)) {
+    if (seenNumbers.has(qNumber)) warnings.push(`Duplicate question number detected after normalization: ${qNumber}`);
+    seenNumbers.add(qNumber);
+  }
+
+  if (qText.length < 3) warnings.push(`Question ${qNumber}: Invalid or empty question detected.`);
+
+  if (qType === "multiple_choice") {
+    const optionTexts = (Array.isArray(question?.options) ? question.options : [])
+      .map((option) => asDisplayText(option?.text ?? option, "").trim())
+      .filter(Boolean);
+    const answerToken = asDisplayText(question?.correct_answer, "").trim();
+
+    if (answerToken) {
+      const letterMatch = answerToken.match(/^([A-H])(?:[).\-:]|$)/i);
+      if (letterMatch) {
+        const index = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+        if (optionTexts.length < 2 || index >= optionTexts.length) {
+          warnings.push(`Question ${qNumber}: MCQ choices were not fully detected.`);
+        }
+      } else if (!optionTexts.some((text) => text.toLowerCase() === answerToken.toLowerCase())) {
+        warnings.push(`Question ${qNumber}: Answer does not match any option.`);
+      }
+    } else {
+      warnings.push(`Missing answer for question ${qNumber}`);
+    }
+  }
+
+  if (qType === "true_false" && !asDisplayText(question?.correct_answer, "").trim()) {
+    warnings.push(`Missing answer for question ${qNumber}`);
+  }
+
+  return warnings;
+}
+
+function validateDraftSections(sections, priorResult = {}) {
+  const warnings = [];
+  const duplicateNumbers = [];
+  const seenNumbers = new Set();
+
+  sections.forEach((section) => {
+    section.questions.forEach((question) => {
+      const nextWarnings = buildQuestionIssues(question, seenNumbers);
+      warnings.push(...nextWarnings);
+      nextWarnings.forEach((message) => {
+        const duplicateMatch = String(message).match(/duplicate question number detected after normalization:\s*(\d+)/i);
+        if (duplicateMatch) duplicateNumbers.push(Number(duplicateMatch[1]));
+      });
+    });
+  });
+
+  const uniqueWarnings = [];
+  const seenWarningKeys = new Set();
+  warnings.forEach((warning) => {
+    const key = String(warning).trim().toLowerCase();
+    if (!key || seenWarningKeys.has(key)) return;
+    seenWarningKeys.add(key);
+    uniqueWarnings.push(warning);
+  });
+
+  const criticalWarnings = uniqueWarnings.filter((warning) => {
+    const text = String(warning).toLowerCase();
+    return text.includes("missing answer") || text.includes("does not match any option") || text.includes("choices were not fully detected");
+  });
+  const confidenceScore = Math.max(0, 100 - criticalWarnings.length * 15 - Math.max(0, uniqueWarnings.length - criticalWarnings.length) * 5);
+
+  return {
+    ...(priorResult || {}),
+    sections,
+    data: { sections },
+    warnings: uniqueWarnings,
+    confidence_score: confidenceScore,
+    risk_level: riskFromScore(confidenceScore),
+    requires_review: uniqueWarnings.length > 0,
+    debug: {
+      ...(priorResult?.debug || {}),
+      duplicate_numbers: Array.from(new Set(duplicateNumbers)),
+      unmatched_questions: [],
+      unmatched_answers: [],
+    },
+  };
+}
+
 export default function ImportPage() {
   const navigate = useNavigate();
   const { courseId } = useParams();
@@ -159,6 +252,7 @@ export default function ImportPage() {
   const [forceConfirm, setForceConfirm] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
   const [selectedIssueId, setSelectedIssueId] = useState(null);
+  const [saveNotice, setSaveNotice] = useState("");
 
   const parsedDraft = useMemo(() => {
     try {
@@ -327,24 +421,16 @@ export default function ImportPage() {
   };
 
   const refreshLocalValidation = (sections) => {
-    const unresolved = issues.filter((issue) => !ignoredIssues.has(issue.id));
-    const nextResult = {
-      ...(importResult || {}),
-      sections,
-      data: { sections },
-      warnings: unresolved.map((issue) => issue.message),
-      confidence_score: importResult?.confidence_score ?? 0,
-      debug: importResult?.debug || {},
-      risk_level: importResult?.risk_level || riskFromScore(importResult?.confidence_score ?? 0),
-      requires_review: unresolved.length > 0,
-    };
+    const nextResult = validateDraftSections(sections, importResult || {});
     setImportResult(nextResult);
     setWarnings(nextResult.warnings || []);
+    return nextResult;
   };
 
   const applyIssueFix = (issue) => {
     if (!issue.autoFixable) return;
     try {
+      setError("");
       const parsed = JSON.parse(jsonDraft || "{}");
       const sections = normalizeSectionsShape(parsed);
       if (issue.type === "numbering") {
@@ -375,6 +461,7 @@ export default function ImportPage() {
       setAppliedFixes((prev) => [...prev, issue.id]);
       setSelectedIssueId(issue.id);
       refreshLocalValidation(sections);
+      setSaveNotice("Suggestion applied. Review the updated draft and save if needed.");
     } catch {
       setError("Failed to apply fix. Please review JSON manually.");
     }
@@ -385,7 +472,7 @@ export default function ImportPage() {
   };
 
   const rerunValidation = async () => {
-    if (lastFile) {
+    if (!parsedDraft && lastFile) {
       await runImport(lastFile);
       return;
     }
@@ -393,8 +480,9 @@ export default function ImportPage() {
       setError("Invalid JSON draft. Fix syntax before re-running validation.");
       return;
     }
-    refreshLocalValidation(normalizeSectionsShape(parsedDraft));
-    setWorkflowState(importBlocked ? "needs_review" : "ready_for_approval");
+    const nextResult = refreshLocalValidation(normalizeSectionsShape(parsedDraft));
+    setWorkflowState(nextResult.requires_review ? "needs_review" : "ready_for_approval");
+    setSaveNotice("Validation updated for the current draft.");
   };
 
   const downloadErrorReport = () => {
@@ -452,6 +540,7 @@ export default function ImportPage() {
   };
 
   const updateQuestionField = (questionNumber, field, value) => {
+    setSaveNotice("");
     updateDraftSections((sections) =>
       sections.map((section) => ({
         ...section,
@@ -471,6 +560,7 @@ export default function ImportPage() {
   };
 
   const updateQuestionOption = (questionNumber, optionIndex, value) => {
+    setSaveNotice("");
     updateDraftSections((sections) =>
       sections.map((section) => ({
         ...section,
@@ -479,13 +569,18 @@ export default function ImportPage() {
           const nextOptions = Array.isArray(question.options) ? [...question.options] : [];
           const currentOption = nextOptions[optionIndex] || {};
           nextOptions[optionIndex] = { ...currentOption, text: value };
-          return { ...question, options: nextOptions };
+          return {
+            ...question,
+            options: nextOptions,
+            choices: nextOptions.map((option) => asDisplayText(option?.text, "")),
+          };
         }),
       }))
     );
   };
 
   const addQuestionOption = (questionNumber) => {
+    setSaveNotice("");
     updateDraftSections((sections) =>
       sections.map((section) => ({
         ...section,
@@ -493,48 +588,106 @@ export default function ImportPage() {
           if (question.number !== questionNumber) return question;
           const nextOptions = Array.isArray(question.options) ? [...question.options] : [];
           nextOptions.push({ text: "" });
-          return { ...question, options: nextOptions };
+          return {
+            ...question,
+            options: nextOptions,
+            choices: nextOptions.map((option) => asDisplayText(option?.text, "")),
+          };
         }),
       }))
     );
   };
 
   const removeQuestionOption = (questionNumber, optionIndex) => {
+    setSaveNotice("");
     updateDraftSections((sections) =>
       sections.map((section) => ({
         ...section,
         questions: section.questions.map((question) => {
           if (question.number !== questionNumber) return question;
           const nextOptions = (Array.isArray(question.options) ? question.options : []).filter((_, index) => index !== optionIndex);
-          return { ...question, options: nextOptions };
+          return {
+            ...question,
+            options: nextOptions,
+            choices: nextOptions.map((option) => asDisplayText(option?.text, "")),
+          };
         }),
       }))
     );
   };
 
   const updateSectionField = (sectionId, field, value) => {
+    setSaveNotice("");
     updateDraftSections((sections) =>
       sections.map((section) => (section.id === sectionId ? { ...section, [field]: value } : section))
     );
   };
 
+  const saveReviewChanges = ({ moveNext = false, resolveIssue = false } = {}) => {
+    if (!parsedDraft) {
+      setError("Unable to save changes. Please try again.");
+      return;
+    }
+
+    const sections = normalizeSectionsShape(parsedDraft).map((section) => ({
+      ...section,
+      questions: section.questions.map((question) => {
+        if (question.type !== "multiple_choice") return question;
+        const paddedOptions = [...(Array.isArray(question.options) ? question.options : [])];
+        while (paddedOptions.length < 4) paddedOptions.push({ text: "" });
+        return {
+          ...question,
+          options: paddedOptions,
+          choices: paddedOptions.map((option) => asDisplayText(option?.text, "")),
+        };
+      }),
+    }));
+
+    try {
+      setError("");
+      const structured = { sections };
+      setJsonDraft(JSON.stringify(structured, null, 2));
+      const nextResult = refreshLocalValidation(sections);
+      const nextWarnings = Array.isArray(nextResult?.warnings) ? nextResult.warnings : [];
+      const remainingIssue = selectedIssue?.questionNumber
+        ? nextWarnings.some((warning) => String(warning).toLowerCase().includes(`question ${selectedIssue.questionNumber}`.toLowerCase()))
+        : false;
+
+      if (resolveIssue && selectedIssue) {
+        if (remainingIssue) {
+          setSaveNotice("This issue still has validation problems. Review the detected choices and correct answer, then save again.");
+          return;
+        }
+        setAppliedFixes((prev) => (prev.includes(selectedIssue.id) ? prev : [...prev, selectedIssue.id]));
+        setIgnoredIssues((prev) => {
+          const next = new Set(prev);
+          next.add(selectedIssue.id);
+          return next;
+        });
+        setSelectedIssueId(null);
+        setSaveNotice("Issue resolved after saving changes.");
+      } else {
+        setSaveNotice("Changes saved.");
+      }
+
+      setWorkflowState(nextResult.requires_review ? "needs_review" : "ready_for_approval");
+      if (moveNext) {
+        const candidateIssues = issues.filter((issue) => issue.id !== selectedIssue?.id);
+        const nextIssue = candidateIssues[selectedIssueIndex] || candidateIssues[0] || null;
+        setSelectedIssueId(nextIssue?.id || null);
+      }
+    } catch {
+      setError("Unable to save changes. Please try again.");
+    }
+  };
+
   const resolveIssueFromReview = (issue) => {
     if (!issue) return;
-    setAppliedFixes((prev) => (prev.includes(issue.id) ? prev : [...prev, issue.id]));
-    markIgnoreIssue(issue.id);
+    saveReviewChanges({ resolveIssue: true });
   };
 
   const reviewNextIssue = () => {
-    if (!issues.length) {
-      setSelectedIssueId(null);
-      return;
-    }
-    if (!selectedIssue) {
-      setSelectedIssueId(issues[0].id);
-      return;
-    }
-    const nextIssue = issues[selectedIssueIndex + 1] || issues[0];
-    setSelectedIssueId(nextIssue.id);
+    saveReviewChanges({ moveNext: true });
   };
 
   const applyToBuilder = (force = false) => {
@@ -632,6 +785,7 @@ export default function ImportPage() {
                 <input type="file" accept=".docx,.pdf" onChange={importFile} className="hidden" disabled={loading} />
               </label>
               {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+              {saveNotice ? <p className="mt-2 text-sm text-emerald-700">{saveNotice}</p> : null}
               {importBlocked ? (
                 <div className="mt-3 rounded-lg border border-rose-300 bg-rose-50 p-2 text-sm text-rose-700">
                   Import Blocked: Critical Issues Detected
@@ -865,7 +1019,9 @@ export default function ImportPage() {
                               </button>
                             </div>
                             <div className="space-y-2">
-                              {(selectedQuestion.options || []).map((option, optionIndex) => (
+                              {Array.from({ length: Math.max(4, (selectedQuestion.options || []).length) }, (_, optionIndex) => {
+                                const option = (selectedQuestion.options || [])[optionIndex] || { text: "" };
+                                return (
                                 <div key={`selected-option-${optionIndex}`} className="flex items-center gap-2">
                                   <span className="w-6 text-sm font-semibold text-gray-500">{String.fromCharCode(65 + optionIndex)}.</span>
                                   <input
@@ -874,11 +1030,14 @@ export default function ImportPage() {
                                     onChange={(event) => updateQuestionOption(selectedQuestion.number, optionIndex, event.target.value)}
                                     className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
                                   />
-                                  <button type="button" onClick={() => removeQuestionOption(selectedQuestion.number, optionIndex)} className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700">
-                                    Remove
-                                  </button>
+                                  {optionIndex >= 4 ? (
+                                    <button type="button" onClick={() => removeQuestionOption(selectedQuestion.number, optionIndex)} className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700">
+                                      Remove
+                                    </button>
+                                  ) : null}
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         ) : null}
@@ -895,6 +1054,9 @@ export default function ImportPage() {
                   )}
 
                   <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => saveReviewChanges()} className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700">
+                      Save Changes
+                    </button>
                     <button
                       type="button"
                       onClick={() => applyIssueFix(selectedIssue)}

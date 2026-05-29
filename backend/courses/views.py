@@ -1638,19 +1638,12 @@ def parse_sections(lines):
 def _parse_question_block(question_number, first_line_text, block_lines, section_type, warnings):
     body_parts = [first_line_text]
     choices_by_letter = {}
+    last_choice_letter = None
     inline_answer = ""
     starter_code_parts = []
     expected_output = ""
     test_cases = ""
     in_code_block = False
-
-    initial_inline_choices = _extract_inline_choices(first_line_text)
-    if len(initial_inline_choices) >= 2:
-        cut_index = re.search(r"[A-Ha-h][\)\.\:\-]", first_line_text)
-        if cut_index:
-            body_parts = [first_line_text[: cut_index.start()].strip()]
-        for letter, text in initial_inline_choices:
-            choices_by_letter[letter] = text
 
     for raw_line in block_lines:
         line = _normalize_line(raw_line)
@@ -1684,20 +1677,42 @@ def _parse_question_block(question_number, first_line_text, block_lines, section
         vertical_choice = _extract_vertical_choice(line)
         if vertical_choice:
             choices_by_letter[vertical_choice[0]] = vertical_choice[1]
+            last_choice_letter = vertical_choice[0]
             continue
 
         inline_choices = _extract_inline_choices(line)
         if len(inline_choices) >= 2:
             for letter, text in inline_choices:
                 choices_by_letter[letter] = text
+                last_choice_letter = letter
             continue
 
         if re.match(r"^[_\-\=\.\s]{3,}$", line):
             continue
 
+        if choices_by_letter and last_choice_letter:
+            choices_by_letter[last_choice_letter] = _normalize_line(
+                f"{choices_by_letter.get(last_choice_letter, '')} {line}"
+            ).strip()
+            continue
+
         body_parts.append(line)
 
-    question_text = _normalize_line(" ".join([part for part in body_parts if part]))
+    combined_body = _normalize_line(" ".join([part for part in body_parts if part]))
+    combined_inline_choices = _extract_inline_choices(combined_body)
+    if len(combined_inline_choices) >= 2:
+        marker_match = re.search(r"(^|\s)[A-Ha-h][\.\)\:\-]\s*", combined_body)
+        if marker_match:
+            combined_question_text = _normalize_line(combined_body[: marker_match.start()]).strip()
+        else:
+            combined_question_text = combined_body
+        choices_by_letter = {
+            letter: text for letter, text in combined_inline_choices if _normalize_line(text)
+        }
+    else:
+        combined_question_text = combined_body
+
+    question_text = combined_question_text
     choices = [choices_by_letter[key] for key in sorted(choices_by_letter.keys()) if choices_by_letter.get(key)]
     detected_type = section_type
     lowered = question_text.lower()
@@ -2501,7 +2516,6 @@ def _parse_json_import_payload(raw_text, mode="balanced"):
 def parse_questions(lines, section_markers):
     warnings = []
     inline_answer_map = {}
-    answer_pattern = re.compile(r"^(?:(?:answer\s*[:=]|ans\s*[:=]|->|\u2192)\s*(.+)|=\s+(.+))$", flags=re.IGNORECASE)
     answer_inline_pattern = re.compile(r"(?:\b(?:answer|ans)\s*[:=]|->|\u2192|^\s*=\s+)\s*(.+?)\s*$", flags=re.IGNORECASE)
     bracket_answer_pattern = re.compile(
         r"\[\s*(?:Answer|Ans)\s*#?\s*(\d+)?\s*:\s*(.*?)\s*\]",
@@ -2565,63 +2579,50 @@ def parse_questions(lines, section_markers):
     marker_idx = 0
     next_start = section_markers[1]["start"] if len(section_markers) > 1 else len(lines) + 1
     current_section = sections[marker_idx]
-    current_question = None
-    current_choices = {}
-    current_choice_letter = None
+    current_question_number = None
+    current_first_line_text = ""
+    current_block_lines = []
     last_question_number = None
-    mode = "question"
 
-    def flush_choice_state():
-        nonlocal current_choices, current_choice_letter
-        if current_question is None:
-            current_choices = {}
-            current_choice_letter = None
+    def flush_current_question():
+        nonlocal current_question_number, current_first_line_text, current_block_lines, last_question_number
+        if current_question_number is None:
             return
-        if current_choices:
-            ordered = [current_choices[key] for key in sorted(current_choices.keys()) if current_choices.get(key)]
-            current_question["choices"] = ordered
-            current_question["options"] = [{"id": idx + 1, "text": item} for idx, item in enumerate(ordered)]
-            if current_question.get("type") == "identification":
-                current_question["type"] = "multiple_choice"
-        current_choices = {}
-        current_choice_letter = None
+        parsed_question = _parse_question_block(
+            current_question_number,
+            current_first_line_text,
+            current_block_lines,
+            current_section.get("type", "identification"),
+            warnings,
+        )
+        if parsed_question:
+            current_section["questions"].append(parsed_question)
+        last_question_number = current_question_number
+        current_question_number = None
+        current_first_line_text = ""
+        current_block_lines = []
 
     for index, raw_line in enumerate(lines):
         while marker_idx + 1 < len(section_markers) and index >= next_start:
-            flush_choice_state()
+            flush_current_question()
             marker_idx += 1
             current_section = sections[marker_idx]
             next_start = section_markers[marker_idx + 1]["start"] if marker_idx + 1 < len(section_markers) else len(lines) + 1
-            current_question = None
-            mode = "question"
+            current_question_number = None
+            current_first_line_text = ""
+            current_block_lines = []
 
         line = _normalize_line(raw_line)
         if not line:
             continue
 
-        # Global answer-line detection (state-independent):
-        # Must attach via last_question_number regardless of mode/current_question.
-        answer_line_match = answer_pattern.match(line)
-        if answer_line_match:
-            raw_value = answer_line_match.group(1) or answer_line_match.group(2)
-            logger.debug("Detected answer line: %s", raw_value)
-            if last_question_number is not None:
-                logger.debug("Attaching to question #%s", last_question_number)
-                _attach_answer_to_last(raw_value)
+        if _is_answer_key_header(line):
+            flush_current_question()
             continue
 
-        bracket_only_match = bracket_answer_pattern.fullmatch(line)
-        if bracket_only_match:
-            raw_value = bracket_only_match.group(2)
-            logger.debug("Detected answer line: %s", raw_value)
-            if last_question_number is not None:
-                logger.debug("Attaching to question #%s", last_question_number)
-                _attach_answer_to_last(raw_value)
+        if _normalize_line(current_section.get("title")) == line:
             continue
 
-        # Pipe-delimited format support:
-        # 1|Question?|A.Option|B.Option|C.Option|D.Option
-        # Answer|A
         if "|" in line and re.match(r"^\s*answer\s*\|", line, flags=re.IGNORECASE):
             if last_question_number is not None:
                 parts = line.split("|", 1)
@@ -2633,7 +2634,7 @@ def parse_questions(lines, section_markers):
             continue
 
         if "|" in line and re.match(r"^\s*\d+\|", line):
-            flush_choice_state()
+            flush_current_question()
             parts = [item.strip() for item in line.split("|")]
             if len(parts) >= 2 and str(parts[0]).isdigit():
                 question_number = int(parts[0])
@@ -2690,14 +2691,13 @@ def parse_questions(lines, section_markers):
                         {"id": 2, "text": "False"},
                     ]
                 current_section["questions"].append(current_question)
-                current_choices = {}
                 last_question_number = question_number
                 logger.debug("Set last_question_number = %s", question_number)
                 logger.debug("Detected pipe-format question")
-                continue
+            continue
 
         if _is_question_start(line):
-            flush_choice_state()
+            flush_current_question()
             number, question_text = _extract_question_number_and_text(line)
             if number is None:
                 continue
@@ -2708,104 +2708,22 @@ def parse_questions(lines, section_markers):
             if extracted_inline:
                 inline_answer_map[str(number)] = extracted_inline
                 logger.debug("Detected inline answer for Q%s", number)
-            inline_choices = _extract_mcq_choices(question_text)
-            if len(inline_choices) >= 2:
-                first_choice_match = re.search(r"[A-Da-d][\.\)]\s*", question_text)
-                if first_choice_match:
-                    question_text = _normalize_line(question_text[: first_choice_match.start()])
-                current_choices = {letter: text for letter, text in inline_choices}
-            else:
-                current_choices = {}
-
-            q_type = _route_question_type(
-                current_section.get("type", "identification"),
-                question_text,
-                has_options=bool(current_choices),
-            )
-
-            current_question = {
-                "id": number,
-                "number": number,
-                "question": question_text,
-                "question_text": question_text,
-                "type": q_type,
-                "choices": [],
-                "options": [],
-                "correct_answer": "",
-                "answer_key": "",
-                "acceptable_answers": [],
-                "starter_code": "",
-                "expected_output": "",
-                "test_cases": "",
-                "points": 1,
-            }
-            current_section["questions"].append(current_question)
+            current_question_number = number
+            current_first_line_text = question_text
+            current_block_lines = []
             last_question_number = number
             logger.debug("Set last_question_number = %s", number)
             for _, q_answer in bracketed:
                 if q_answer:
                     _attach_answer_to_last(q_answer)
                     logger.debug("Extracted inline bracket answer for Q%s: %s", last_question_number, q_answer)
-            mode = "choices" if q_type == "multiple_choice" or len(current_choices) >= 2 else "question"
             continue
 
-        if current_question is None:
+        if current_question_number is None:
             continue
+        current_block_lines.append(raw_line)
 
-        horizontal_choices = _extract_mcq_choices(line)
-        if len(horizontal_choices) >= 2:
-            for letter, text in horizontal_choices:
-                current_choices[letter] = text
-                current_choice_letter = letter
-            mode = "choices"
-            continue
-        vertical_choice = _extract_vertical_choice(line)
-        if vertical_choice:
-            current_choices[vertical_choice[0]] = vertical_choice[1]
-            current_choice_letter = vertical_choice[0]
-            mode = "choices"
-            continue
-
-        if re.match(r"^[_\-\=\.\s]{3,}$", line):
-            continue
-
-        line, bracketed = _extract_bracketed_answers(line, current_question.get("number"))
-        for _, q_answer in bracketed:
-            if q_answer:
-                _attach_answer_to_last(q_answer)
-                logger.debug("Extracted inline bracket answer for Q%s: %s", last_question_number, q_answer)
-        if not line:
-            continue
-
-        # OCR resilience: if option text is broken into the next line and we are in
-        # choices mode, append continuation to the last option instead of question text.
-        if mode == "choices" and current_choice_letter and current_choices.get(current_choice_letter):
-            continuation = _normalize_line(line)
-            if continuation and not _is_question_start(continuation) and not _extract_vertical_choice(continuation):
-                current_choices[current_choice_letter] = _normalize_line(
-                    f"{current_choices[current_choice_letter]} {continuation}"
-                )
-                continue
-
-        # Prevent inline answer contamination inside mixed content lines.
-        clean_part, extracted_answer = _extract_inline_from_text(line)
-        if extracted_answer:
-            _attach_answer_to_last(extracted_answer)
-            if not clean_part:
-                continue
-            line = clean_part
-
-        if current_question.get("type") == "coding":
-            starter = current_question.get("starter_code", "")
-            current_question["starter_code"] = f"{starter}\n{raw_line}".strip() if starter else raw_line.strip()
-        else:
-            separator = "\n" if current_question.get("type") == "coding" else " "
-            updated_text = f"{current_question.get('question', '')}{separator}{line}".strip()
-            current_question["question"] = updated_text
-            current_question["question_text"] = updated_text
-        mode = "question"
-
-    flush_choice_state()
+    flush_current_question()
 
     cleaned_sections = []
     for section in sections:
