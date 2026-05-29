@@ -1321,6 +1321,12 @@ def _line_for_matching(line):
     return cleaned
 
 
+ANSWER_KEY_HEADER_PATTERN = re.compile(
+    r"^(answer\s*key|answer\s*keys|answers|key\s*answers?|answer\s*sheet)\b[:\-\s]*",
+    flags=re.IGNORECASE,
+)
+
+
 def _map_section_type(title):
     value = _line_for_matching(title)
     for section_type, keywords in SECTION_TYPE_KEYWORDS.items():
@@ -1331,16 +1337,30 @@ def _map_section_type(title):
 
 def _is_answer_key_header(line):
     value = _line_for_matching(line)
-    return bool(re.match(r"^(answer\s*key|answers|key)\b", value))
+    return bool(ANSWER_KEY_HEADER_PATTERN.match(value))
+
+
+def _split_answer_key_header_line(line):
+    normalized = _normalize_line(line)
+    if not normalized:
+        return False, ""
+    match = ANSWER_KEY_HEADER_PATTERN.match(normalized)
+    if not match:
+        return False, ""
+    remainder = _normalize_line(normalized[match.end() :])
+    return True, remainder
 
 
 def split_document(raw_text):
     cleaned_text = normalize_text(raw_text)
     raw_lines = [str(line or "").rstrip() for line in cleaned_text.splitlines()]
     answer_key_index = None
+    answer_key_remainder = ""
     for index, line in enumerate(raw_lines):
-        if _is_answer_key_header(line):
+        is_header, remainder = _split_answer_key_header_line(line)
+        if is_header:
             answer_key_index = index
+            answer_key_remainder = remainder
             break
 
     if answer_key_index is None:
@@ -1348,13 +1368,23 @@ def split_document(raw_text):
         answer_lines = []
     else:
         exam_lines = [line for line in raw_lines[:answer_key_index] if _normalize_line(line)]
-        answer_lines = [line for line in raw_lines[answer_key_index + 1 :] if _normalize_line(line)]
+        answer_lines = []
+        if answer_key_remainder:
+            answer_lines.append(answer_key_remainder)
+        answer_lines.extend(line for line in raw_lines[answer_key_index + 1 :] if _normalize_line(line))
 
     return exam_lines, answer_lines
 
 
+def _looks_like_exam_title(line):
+    value = _line_for_matching(line)
+    return bool(re.match(r"^\d{1,4}\s*-\s*(item|items|question|questions)\b", value))
+
+
 def _is_question_start(line):
     text = _normalize_line(line)
+    if _looks_like_exam_title(text):
+        return False
     return bool(
         re.match(
             r"^(?:q\s*)?\d{1,4}(?:\s*[\.\)\-:]\s*|\s+)\S+",
@@ -1366,6 +1396,8 @@ def _is_question_start(line):
 
 def _extract_question_number_and_text(line):
     text = _normalize_line(line)
+    if _looks_like_exam_title(text):
+        return None, text
     match = re.match(
         r"^(?:q\s*)?(\d{1,4})(?:\s*[\.\)\-:]\s*|\s+)(.+)$",
         text,
@@ -1377,8 +1409,7 @@ def _extract_question_number_and_text(line):
 
 
 def _extract_inline_choices(line):
-    matches = re.findall(r"([A-Ha-h])[\)\.\:\-]\s*([^A-H\n\r]+?)(?=(?:\s+[A-Ha-h][\)\.\:\-])|$)", line)
-    return [(letter.upper(), _normalize_line(text)) for letter, text in matches if _normalize_line(text)]
+    return _extract_mcq_choices(line)
 
 
 def _extract_vertical_choice(line):
@@ -1390,7 +1421,7 @@ def _extract_vertical_choice(line):
 
 def _extract_mcq_choices(line):
     normalized = _normalize_line(line)
-    marker_pattern = re.compile(r"(^|\s)([A-Da-d])[\.\)]\s*")
+    marker_pattern = re.compile(r"(^|\s)([A-Ha-h])[\.\)\:\-]\s*")
     markers = list(marker_pattern.finditer(normalized))
     if not markers:
         return []
@@ -2124,6 +2155,27 @@ def realign_answers_with_offset(question_numbers, answers_map, offset_range=3):
     for qn, value in best_bound.items():
         adjusted[str(qn)] = value
     return adjusted, best_offset, best_unmatched_questions, best_unmatched_answers
+
+
+def _extract_answer_key_entries(text):
+    normalized = _normalize_line(text).strip().rstrip(",;")
+    if not normalized:
+        return []
+
+    marker_pattern = re.compile(r"(?:(?<=^)|(?<=[,;])|(?<=\s))(\d{1,4})\s*[\.\)\:\-\u2013\u2014]\s*")
+    markers = list(marker_pattern.finditer(normalized))
+    if not markers:
+        return []
+
+    entries = []
+    for index, match in enumerate(markers):
+        start = match.end()
+        end = markers[index + 1].start() if index + 1 < len(markers) else len(normalized)
+        raw_value = _normalize_line(normalized[start:end]).strip(" ,;")
+        if not raw_value:
+            continue
+        entries.append((int(match.group(1)), raw_value))
+    return entries
 
 
 def _apply_context_aware_type(question):
@@ -3004,10 +3056,7 @@ def parse_answers(lines):
         r"(?:\s*\([^)]*\))?\s*:?\s*$",
         flags=re.IGNORECASE,
     )
-    answer_start_pattern = re.compile(r"^(?:q\s*)?(\d{1,3})\s*[\.\)\:\-]?\s*(.*)$", flags=re.IGNORECASE)
-    compact_pair_pattern = re.compile(
-        r"(\d{1,4})\s*[-\u2013\u2014]\s*([A-Za-z0-9#().+/:,;| ]+?)(?=\s+\d{1,4}\s*[-\u2013\u2014]|$)"
-    )
+    answer_start_pattern = re.compile(r"^(?:q\s*)?(\d{1,3})\s*[\.\)\:\-\u2013\u2014]\s*(.*)$", flags=re.IGNORECASE)
 
     current_number = None
     current_lines = []
@@ -3053,11 +3102,10 @@ def parse_answers(lines):
         # Compact answer-key support:
         # 1-B 2-C 3-A ... 31-Variable
         # Works with mixed answer types in one line.
-        compact_pairs = compact_pair_pattern.findall(normalized)
+        compact_pairs = _extract_answer_key_entries(normalized)
         if compact_pairs:
             commit_current()
-            for q_number_str, value in compact_pairs:
-                q_number = int(q_number_str)
+            for q_number, value in compact_pairs:
                 answer_value = _normalize_line(value).rstrip(",.;")
                 key = str(q_number)
                 section_key = current_section or "identification"
